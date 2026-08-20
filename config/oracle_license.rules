@@ -1,0 +1,30 @@
+# oracle_license.rules
+#
+# Format:
+#   SEVERITY|SOURCE|LITERAL_PATTERN
+#
+# SEVERITY: WARNING or CRITICAL
+# SOURCE:   OPTION, FEATURE, PARAM, COMPONENT, META, SIGNAL, or ANY
+#
+# IMPORTANT:
+# - OPTION means capability reported TRUE by V$OPTION. This does NOT prove use.
+# - FEATURE means historical usage reported by DBA_FEATURE_USAGE_STATISTICS.
+# - SIGNAL is additional technical evidence collected by this project.
+# - PARAM includes parameters such as control_management_pack_access.
+# - Rules must reflect YOUR Oracle contracts and the licensing rules for the
+#   exact Oracle Database release being checked.
+#
+# Nothing is active by default to avoid false compliance assertions.
+
+# Examples only - uncomment/adapt when the feature is not licensed:
+# CRITICAL|FEATURE|Partitioning
+# CRITICAL|FEATURE|Advanced Compression
+# CRITICAL|FEATURE|Database Vault
+# CRITICAL|FEATURE|Real Application Testing
+# CRITICAL|FEATURE|SQL Tuning Advisor
+# CRITICAL|SIGNAL|ACTIVE_DATA_GUARD_LIKE|YES
+# WARNING|OPTION|Partitioning
+# WARNING|OPTION|Advanced Compression
+# WARNING|PARAM|DIAGNOSTIC+TUNING
+# WARNING|SIGNAL|RAC_CONFIGURED|TRUE
+# WARNING|SIGNAL|TDE_ENCRYPTED_TABLESPACES|
