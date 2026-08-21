@@ -1,0 +1,83 @@
+# =====================================================================
+# /etc/oracle-licensing/oracle-licensing.conf
+#
+# Configuration commune au collecteur et au plugin de controle.
+# Fichier source par du shell : syntaxe VAR="valeur", pas d'espace
+# autour du "=".
+#
+# Ne contient AUCUN secret : la collecte s'authentifie aupres d'Oracle
+# par appartenance au groupe OSDBA ("/ as sysdba"). C'est un des
+# arguments majeurs de l'execution locale sur cette architecture.
+# =====================================================================
+
+# Ce fichier est partage entre les variantes Unix et Windows. Cote Unix
+# il est source par le shell ; cote Windows il est analyse a la main par
+# les scripts PowerShell (un fichier de configuration ne doit jamais y
+# etre du code executable). La syntaxe CLE="valeur" convient aux deux.
+
+# --- Emplacements (Unix) ---------------------------------------------
+CACHE_DIR=/var/cache/oracle-licensing
+SQL_FILE=/usr/lib/oracle-licensing/collect_licensing.sql
+MAP_FILE=/etc/oracle-licensing/licensable-features.map
+AWK_FILE=/usr/lib/oracle-licensing/licensing_eval.awk
+ORATAB=/etc/oratab
+
+# --- Emplacements (Windows) ------------------------------------------
+# Ignores sous Unix, et reciproquement : un meme fichier peut donc etre
+# distribue sur tout le parc.
+CACHE_DIR_WIN="C:\ProgramData\oracle-licensing\cache"
+SQL_FILE_WIN="C:\Program Files\oracle-licensing\collect_licensing.sql"
+
+# Groupe proprietaire des fichiers de cache. Doit correspondre au compte
+# sous lequel tourne NRPE, afin qu'il puisse lire sans jamais ecrire.
+CACHE_GROUP=nagios
+
+# --- Collecte --------------------------------------------------------
+# Delai maximal accorde a sqlplus par instance. La requete sur
+# DBA_FEATURE_USAGE_STATISTICS peut depasser la minute sur une base
+# volumineuse ; c'est pourquoi elle ne tourne jamais dans le contexte NRPE.
+SQLPLUS_TIMEOUT=120
+
+# Restreindre la collecte a certains SID (listes separees par des espaces).
+# Laisser vide pour traiter toutes les entrees exploitables de l'oratab.
+INCLUDE_SIDS=""
+EXCLUDE_SIDS="TESTDB DEVDB"
+
+# --- Materiel --------------------------------------------------------
+# Facteur de coeur Oracle (Core Factor Table). Laisser vide pour une
+# deduction depuis l'architecture (0.5 en x86_64). A fixer explicitement
+# sur SPARC, POWER, ou lorsque le contrat prevoit un facteur particulier.
+#
+# A renseigner imperativement sur RHEL 5 sans lscpu et sur les serveurs
+# ou le comptage de coeurs est signale comme non fiable : le mode
+# processors passe alors en WARNING plutot que d'affirmer un chiffre faux.
+CORE_FACTOR=""
+
+# =====================================================================
+# DECLARATION CONTRACTUELLE
+#
+# C'est ici que se joue la valeur du controle : la liste ci-dessous
+# decrit ce que vous DETENEZ. Tout usage constate en dehors devient une
+# alerte. Renseignez-la depuis vos bons de commande Oracle, jamais
+# depuis ce qui est observe en base -- sinon le controle valide la
+# derive au lieu de la detecter.
+#
+# Libelles reconnus (champ 2 de licensable-features.map) :
+#   Partitioning, Diagnostics Pack, Tuning Pack, Advanced Compression,
+#   Advanced Security, Real Application Clusters, RAC One Node,
+#   Active Data Guard, Real Application Testing, Multitenant,
+#   Database In-Memory, Label Security, Database Vault, OLAP,
+#   Spatial and Graph, Advanced Analytics, GoldenGate,
+#   Change Management Pack, Configuration Management Pack,
+#   Data Masking and Subsetting Pack, Lifecycle Management Pack,
+#   Cloud Management Pack
+# =====================================================================
+LICENSED_OPTIONS="Partitioning,Diagnostics Pack,Tuning Pack"
+
+# Nombre de licences Processor detenues pour cet hote.
+LICENSED_PROCESSORS=""
+
+# --- Controle --------------------------------------------------------
+# Age maximal du cache avant alerte, en secondes. 93600 s = 26 h : laisse
+# du jeu a un run quotidien decale sans ouvrir une fenetre d'aveuglement.
+MAX_CACHE_AGE=93600

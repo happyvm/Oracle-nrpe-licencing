@@ -1,0 +1,31 @@
+[Unit]
+Description=Collecte de conformite des licences Oracle
+Documentation=https://github.com/happyvm/oracle-nrpe-licencing
+After=network.target
+
+[Service]
+Type=oneshot
+
+# Doit appartenir au groupe OSDBA pour la connexion "/ as sysdba".
+User=oracle
+Group=dba
+
+ExecStart=/usr/local/bin/oracle_licensing_collector.sh
+
+# La collecte est deliberement lente et sans urgence : on la borne
+# largement et on la place en arriere-plan pour ne rien disputer a la
+# production.
+TimeoutStartSec=1800
+Nice=19
+IOSchedulingClass=idle
+
+# Durcissement : le collecteur ne fait que lire des vues et ecrire un
+# cache. Rien d'autre ne lui est necessaire.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/cache/oracle-licensing
+
+[Install]
+WantedBy=multi-user.target

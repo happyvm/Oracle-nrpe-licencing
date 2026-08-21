@@ -1,0 +1,20 @@
+[Unit]
+Description=Collecte quotidienne de conformite des licences Oracle
+Documentation=https://github.com/happyvm/oracle-nrpe-licencing
+
+[Timer]
+# Une fois par jour suffit : DBA_FEATURE_USAGE_STATISTICS est alimentee
+# par un snapshot MMON hebdomadaire, une collecte plus frequente
+# n'apporterait aucune fraicheur supplementaire.
+OnCalendar=*-*-* 03:17:00
+
+# Dispersion sur un parc etendu : evite que cent serveurs interrogent
+# leurs bases a la seconde pres.
+RandomizedDelaySec=1800
+
+# Rattrape le run manque apres un arret de la machine, faute de quoi le
+# controle de fraicheur passerait en alerte sans motif de licence.
+Persistent=yes
+
+[Install]
+WantedBy=timers.target

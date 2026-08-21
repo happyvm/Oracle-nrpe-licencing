@@ -1,0 +1,6 @@
+# Alternative a systemd pour les plateformes sans timer (OL6, AIX...).
+# A deposer dans /etc/cron.d/oracle-licensing
+#
+# La minute non ronde disperse la charge sur un parc etendu ; ajustez-la
+# par serveur si votre parc est important.
+17 3 * * * oracle /usr/local/bin/oracle_licensing_collector.sh >/dev/null 2>&1
