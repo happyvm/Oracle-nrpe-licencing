@@ -16,6 +16,8 @@ set -o pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd); readonly ROOT
 readonly COLLECTOR=$ROOT/bin/oracle_licensing_collector.sh
+# Shell sous lequel exercer le collecteur (bash 3.2 pour RHEL 5, etc.).
+SHELL_UNDER_TEST=${SHELL_UNDER_TEST:-/bin/sh}
 WORK=$(mktemp -d); readonly WORK
 declare -a FAKE_PMON=()
 cleanup() {
@@ -64,7 +66,7 @@ start_fake_pmon() {
     return 1
 }
 
-echo "== Preparation =="
+echo "== Preparation (shell: $SHELL_UNDER_TEST) =="
 H1=$(make_home PROD1); H2=$(make_home PROD2)
 cat > "$WORK/reply_PROD1.txt" <<'EOS'
 
@@ -110,7 +112,7 @@ ORATAB=$WORK/oratab
 CACHE_GROUP=$(id -gn)
 SQLPLUS_TIMEOUT=30
 EOS
-out=$("$COLLECTOR" --config "$WORK/conf" -v 2>&1); rc=$?
+out=$("$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" -v 2>&1); rc=$?
 [[ $rc -eq 0 ]] && ok "collecte terminee sans echec (rc=0)" \
                 || bad "collecte en echec (rc=$rc)" "${out##*$'\n'}"
 
@@ -146,19 +148,19 @@ grep -q 'PROD1' "$CACHE/PROD2.dat" && bad "fuite de PROD1 dans le cache PROD2" \
 
 echo "== Filtres INCLUDE / EXCLUDE =="
 rm -rf "$CACHE"
-"$COLLECTOR" --config "$WORK/conf" -s PROD1 >/dev/null 2>&1
+"$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" -s PROD1 >/dev/null 2>&1
 [[ -f $CACHE/PROD1.dat && ! -f $CACHE/PROD2.dat ]] \
     && ok "--sid restreint bien la collecte" || bad "--sid sans effet"
 
 rm -rf "$CACHE"
 echo 'EXCLUDE_SIDS="PROD2"' >> "$WORK/conf"
-"$COLLECTOR" --config "$WORK/conf" >/dev/null 2>&1
+"$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" >/dev/null 2>&1
 [[ -f $CACHE/PROD1.dat && ! -f $CACHE/PROD2.dat ]] \
     && ok "EXCLUDE_SIDS respecte" || bad "EXCLUDE_SIDS sans effet"
 
 echo "== Mode dry-run =="
 rm -rf "$CACHE"
-out=$("$COLLECTOR" --config "$WORK/conf" -n 2>/dev/null)
+out=$("$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" -n 2>/dev/null)
 [[ ! -d $CACHE ]] && ok "--dry-run n'ecrit rien sur disque" || bad "--dry-run a ecrit dans le cache"
 grep -q '^KV|db.name|PROD1$' <<<"$out" && ok "--dry-run emet sur stdout" || bad "--dry-run muet"
 
@@ -168,7 +170,7 @@ cat > "$WORK/oratab" <<EOS
 STOPPED:$H1:Y
 EOS
 sed -i '/EXCLUDE_SIDS/d' "$WORK/conf"
-"$COLLECTOR" --config "$WORK/conf" >/dev/null 2>&1
+"$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" >/dev/null 2>&1
 grep -q '^KV|collect.status|instance_down$' "$CACHE/STOPPED.dat" 2>/dev/null \
     && ok "instance arretee : fiche publiee avec le bon statut" \
     || bad "instance arretee : statut incorrect"

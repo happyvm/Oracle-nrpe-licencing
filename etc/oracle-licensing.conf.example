@@ -10,11 +10,23 @@
 # arguments majeurs de l'execution locale sur cette architecture.
 # =====================================================================
 
-# --- Emplacements ----------------------------------------------------
+# Ce fichier est partage entre les variantes Unix et Windows. Cote Unix
+# il est source par le shell ; cote Windows il est analyse a la main par
+# les scripts PowerShell (un fichier de configuration ne doit jamais y
+# etre du code executable). La syntaxe CLE="valeur" convient aux deux.
+
+# --- Emplacements (Unix) ---------------------------------------------
 CACHE_DIR=/var/cache/oracle-licensing
 SQL_FILE=/usr/lib/oracle-licensing/collect_licensing.sql
 MAP_FILE=/etc/oracle-licensing/licensable-features.map
+AWK_FILE=/usr/lib/oracle-licensing/licensing_eval.awk
 ORATAB=/etc/oratab
+
+# --- Emplacements (Windows) ------------------------------------------
+# Ignores sous Unix, et reciproquement : un meme fichier peut donc etre
+# distribue sur tout le parc.
+CACHE_DIR_WIN="C:\ProgramData\oracle-licensing\cache"
+SQL_FILE_WIN="C:\Program Files\oracle-licensing\collect_licensing.sql"
 
 # Groupe proprietaire des fichiers de cache. Doit correspondre au compte
 # sous lequel tourne NRPE, afin qu'il puisse lire sans jamais ecrire.
@@ -35,6 +47,10 @@ EXCLUDE_SIDS="TESTDB DEVDB"
 # Facteur de coeur Oracle (Core Factor Table). Laisser vide pour une
 # deduction depuis l'architecture (0.5 en x86_64). A fixer explicitement
 # sur SPARC, POWER, ou lorsque le contrat prevoit un facteur particulier.
+#
+# A renseigner imperativement sur RHEL 5 sans lscpu et sur les serveurs
+# ou le comptage de coeurs est signale comme non fiable : le mode
+# processors passe alors en WARNING plutot que d'affirmer un chiffre faux.
 CORE_FACTOR=""
 
 # =====================================================================

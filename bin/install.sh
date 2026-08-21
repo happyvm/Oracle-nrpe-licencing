@@ -21,6 +21,17 @@ NRPE_GROUP=${NRPE_GROUP:-nagios}
 
 [[ $(id -u) -eq 0 ]] || { echo "ce script doit tourner en root" >&2; exit 1; }
 
+echo "== Verification de l'environnement"
+if ! command -v awk >/dev/null 2>&1 && ! command -v nawk >/dev/null 2>&1; then
+    echo "   awk introuvable : le moteur d'evaluation ne pourra pas tourner" >&2
+    exit 1
+fi
+echo "   awk         : $(command -v nawk 2>/dev/null || command -v awk)"
+echo "   shell        : $( (readlink -f /bin/sh) 2>/dev/null || echo /bin/sh)"
+if [ -r /etc/redhat-release ]; then
+    echo "   distribution : $(cat /etc/redhat-release)"
+fi
+
 echo "== Repertoires"
 install -d -m 0755 "$PLUGIN_DIR" "$CONF_DIR" "$LIB_DIR" "$BIN_DIR"
 
@@ -34,6 +45,9 @@ install -m 0644 -o root -g root "$SRC/sql/collect_licensing.sql"         "$LIB_D
 
 echo "== Plugin NRPE"
 install -m 0755 -o root -g root "$SRC/bin/check_oracle_licensing.sh" "$PLUGIN_DIR/"
+# Le moteur d'evaluation vit en awk pour rester compatible de RHEL 5
+# (bash 3.2) a RHEL 9 : voir docs/compatibility.md.
+install -m 0644 -o root -g root "$SRC/lib/licensing_eval.awk"        "$LIB_DIR/"
 
 echo "== Donnees de reference"
 install -m 0644 -o root -g root "$SRC/etc/licensable-features.map" "$CONF_DIR/"

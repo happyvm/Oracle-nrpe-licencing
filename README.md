@@ -63,6 +63,22 @@ sudo -u oracle /usr/local/bin/oracle_licensing_collector.sh -v
 systemctl reload nrpe
 ```
 
+### Windows
+
+Dans une console PowerShell élevée :
+
+```powershell
+.\windows\install.ps1
+```
+
+Puis renseigner `C:\ProgramData\oracle-licensing\oracle-licensing.conf`
+(même fichier et même syntaxe que sous Unix), fusionner
+`windows\nsclient-oracle-licensing.ini` dans `nsclient.ini`, et
+redémarrer NSClient++.
+
+Le compte exécutant la tâche planifiée doit appartenir au groupe local
+**ORA_DBA**, sans quoi la connexion `/ as sysdba` échoue.
+
 Côté Centreon, suivre **[centreon/README.md](centreon/README.md)**.
 
 ## Modes de contrôle
@@ -129,20 +145,34 @@ User Manual*.
 
 ```bash
 ./tests/run_all.sh
+
+# Pour couvrir aussi bash 3.2 (RHEL 5) et le moteur Windows :
+BASH32=/chemin/vers/bash-3.2 PWSH=$(command -v pwsh) ./tests/run_all.sh
 ```
 
-63 tests s'exécutant **sans base Oracle**, plus l'analyse statique
-`shellcheck` :
+**Sans aucune base Oracle**, ni machine Windows :
 
 | Suite | Couverture |
 |---|---|
-| `run_tests.sh` (40) | les cinq modes, les seuils, l'absence de faux positifs, les cas limites — édition incompatible, instance arrêtée, cache périmé |
+| `run_tests.sh` (53) | les cinq modes, les seuils, l'absence de faux positifs, les cas limites — édition incompatible, instance arrêtée, cache périmé, Oracle 9i et 10g |
 | `run_collector_tests.sh` (23) | découverte via `oratab`, nommage des caches, écriture atomique, filtres `--sid`/`EXCLUDE_SIDS`, `--dry-run`, instance arrêtée |
+| `run_parity_tests.sh` (26) | verdicts identiques entre le moteur awk et le moteur PowerShell |
+
+Les deux premières suites sont rejouées **sous chaque shell disponible**
+(`dash`, `bash 3.2`, `bash 5.x`), et le moteur awk est vérifié sous
+`gawk`, `mawk` et `nawk` — soit 254 exécutions de test au total.
+S'y ajoute `shellcheck -S warning`, sans avertissement.
 
 Le plugin est testé sur des caches de référence (`tests/fixtures/`), le
 collecteur avec un `sqlplus` et un `oratab` simulés. C'est le bénéfice
 direct de l'architecture en deux étages : la logique de conformité est
 vérifiable hors production.
+
+Trois éléments **n'ont pas pu être vérifiés par exécution** et sont à
+couvrir en recette : le chemin WMI du collecteur Windows, le
+comportement réel sous PowerShell 2.0, et le SQL contre de vraies
+instances 9i à 19c. Le détail est dans
+[docs/compatibility.md](docs/compatibility.md).
 
 ## Sécurité
 
@@ -153,12 +183,47 @@ vérifiable hors production.
 - **Aucune entrée `sudoers` n'est requise.**
 - Toutes les requêtes SQL sont en lecture seule.
 
+## Compatibilité
+
+Périmètre couvert : **Windows Server 2003 → 2025**, **RHEL 5 → 9**,
+**Oracle 9i → 19c**. Détail complet dans
+**[docs/compatibility.md](docs/compatibility.md)**.
+
+| Plateforme | Statut |
+|---|---|
+| RHEL 5 → 9 | supporté (shell POSIX + awk ; replis pour `lscpu`, `timeout`, `systemd`) |
+| Windows Server 2008 R2 → 2025 | supporté (PowerShell 2.0+, NSClient++) |
+| Windows Server 2003 | nécessite l'installation préalable de WMF 2.0 ; hors support Microsoft depuis 2015 |
+| Oracle 10.1 → 19c | supporté |
+| Oracle 9i | **dégradé** — voir ci-dessous |
+
+**Trois limites à connaître avant de déployer :**
+
+1. **Oracle 9i ne permet pas le contrôle d'usage des options.**
+   `DBA_FEATURE_USAGE_STATISTICS` n'existe qu'à partir de 10.1 ; la base
+   n'enregistre nulle part quelles options ont servi. Le mode `options`
+   renvoie donc UNKNOWN plutôt qu'un OK trompeur. Sur ces bases,
+   déclarez `inventory`, `sessions` et `processors`, pas `options`.
+2. **Windows Server 2003 n'embarque aucun PowerShell.** WMF 2.0 doit y
+   être installé au préalable.
+3. **Le moteur Windows est une seconde implémentation** de la même
+   logique. `tests/run_parity_tests.sh` compare les deux sur des données
+   identiques ; toute modification de la logique doit le faire passer.
+
+**Pourquoi le moteur est en awk plutôt qu'en bash.** Les tableaux
+associatifs exigent bash 4.0 et les références nommées bash 4.3 : un
+moteur en bash moderne aurait exclu RHEL 5, 6 et 7. Les scripts sont
+donc en shell POSIX et délèguent l'évaluation à
+`lib/licensing_eval.awk`.
+
 ## Prérequis
 
-- Oracle Database 11.2 ou supérieur (testé jusqu'à 19c ; le SQL dégrade
-  proprement sur les versions sans `V$PDBS` ni colonne `CDB`)
-- Bash 4.2+, NRPE 3.x
-- `lscpu` recommandé pour un comptage de cœurs fiable
+- Oracle Database 9.2 ou supérieur (fonctionnalités selon la version)
+- Unix : shell POSIX et awk — aucune dépendance à bash 4
+- Windows : PowerShell 2.0 ou supérieur, NSClient++
+- NRPE 3.x
+- `lscpu` (Unix) ou WMI (Windows) recommandés pour un comptage de cœurs
+  fiable ; sinon renseigner `CORE_FACTOR` et le nombre de cœurs
 
 ## Licence
 

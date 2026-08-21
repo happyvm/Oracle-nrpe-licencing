@@ -13,6 +13,10 @@ set -o pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd); readonly ROOT
 readonly CHECK=$ROOT/bin/check_oracle_licensing.sh
 readonly MAP=$ROOT/etc/licensable-features.map
+readonly AWKF=$ROOT/lib/licensing_eval.awk
+# Shell sous lequel exercer le plugin : permet de rejouer toute la suite
+# sur bash 3.2 (RHEL 5) comme sur bash 5 (RHEL 9).
+SHELL_UNDER_TEST=${SHELL_UNDER_TEST:-/bin/sh}
 WORK=$(mktemp -d); readonly WORK
 trap 'rm -rf "$WORK"' EXIT
 
@@ -41,7 +45,7 @@ mkcache_variant() {
 assert_rc() {
     local want=$1 label=$2; shift 2
     local out rc
-    out=$("$CHECK" --cache-dir "$WORK" --map "$MAP" --config /dev/null "$@" 2>&1)
+    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" --config /dev/null "$@" 2>&1)
     rc=$?
     if [[ $rc -eq $want ]]; then
         printf '  ok   %-58s (rc=%d)\n' "$label" "$rc"; PASS=$(( PASS + 1 ))
@@ -55,7 +59,7 @@ assert_rc() {
 assert_out() {
     local pat=$1 label=$2; shift 2
     local out
-    out=$("$CHECK" --cache-dir "$WORK" --map "$MAP" --config /dev/null "$@" 2>&1)
+    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" --config /dev/null "$@" 2>&1)
     if grep -qE -- "$pat" <<<"$out"; then
         printf '  ok   %-58s\n' "$label"; PASS=$(( PASS + 1 ))
     else
@@ -65,7 +69,7 @@ assert_out() {
     fi
 }
 
-echo "== Mode options =="
+echo "== Mode options (shell: $SHELL_UNDER_TEST) =="
 mkcache ORCL 300
 
 assert_rc 2 "aucune option declaree -> CRITICAL" \
@@ -93,8 +97,8 @@ assert_out 'Multitenant' "3 PDB -> option Multitenant requise" \
 
 echo "== Absence de faux positifs =="
 for noise in 'Partitioning \(system\)' 'SecureFiles \(user\)' 'Java Virtual Machine' 'Spatial'; do
-    out=$("$CHECK" --cache-dir "$WORK" --map "$MAP" --config /dev/null \
-          -s ORCL -m options --licensed-options "Partitioning" 2>&1)
+    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
+          --config /dev/null -s ORCL -m options --licensed-options "Partitioning" 2>&1)
     if grep -qE -- "$noise" <<<"$out"; then
         printf '  FAIL %-58s\n' "faux positif : $noise"; FAIL=$(( FAIL + 1 ))
     else
@@ -159,6 +163,35 @@ mkcache DOWNDB 300
 assert_rc 1 "instance arretee -> WARNING en freshness" -s DOWNDB -m freshness
 assert_out 'instance arretee' "l'etat arrete est explicite"  -s DOWNDB -m freshness
 assert_rc 0 "aucune feature collectee -> pas de fausse alerte" -s DOWNDB -m options
+
+echo "== Oracle 9i : controle d'usage impossible =="
+mkcache DB9I 300
+# Le point critique : sur 9i, DBA_FEATURE_USAGE_STATISTICS n'existe pas.
+# Repondre OK laisserait croire a la conformite alors que rien n'a ete
+# verifie. La seule reponse honnete est UNKNOWN.
+assert_rc 3 "9i : mode options -> UNKNOWN, jamais OK" -s DB9I -m options
+assert_out 'impossible' "9i : l'impossibilite est explicitee"       -s DB9I -m options
+assert_out '10\.1'      "9i : la version requise est indiquee"      -s DB9I -m options
+assert_rc 0 "9i : inventory reste exploitable"     -s DB9I -m inventory
+assert_out 'INDISPONIBLE' "9i : inventory signale la limite"        -s DB9I -m inventory
+# V$LICENSE et l'inventaire OS existent depuis bien avant 9i.
+assert_rc 0 "9i : sessions fonctionne (V\$LICENSE)"  -s DB9I -m sessions -w 5000 -c 9000
+assert_out 'nup_floor=50' "9i : plancher NUP calcule (25 x 2)"      -s DB9I -m sessions
+assert_rc 0 "9i : processors fonctionne (inventaire OS)" -s DB9I -m processors --licensed-processors 2
+assert_rc 2 "9i : deficit Processor detecte"        -s DB9I -m processors --licensed-processors 1
+
+echo "== Oracle 10g : gratuite dependante de la version =="
+mkcache DB10G 300
+# Spatial n'est inclus sans supplement qu'a partir de 12.2 : sur 10.2 il
+# reste une option payante et doit etre signale.
+assert_out 'Spatial' "10g : Spatial encore payant en 10.2"          -s DB10G -m options --licensed-options "Partitioning"
+assert_rc 2 "10g : Spatial non declare -> CRITICAL"                 -s DB10G -m options --licensed-options "Partitioning"
+assert_rc 0 "10g : Spatial declare -> OK"                           -s DB10G -m options --licensed-options "Partitioning,Spatial and Graph"
+# La meme feature sur 19c ne doit plus rien declencher : c'est la
+# comparaison de version qui fait la difference, pas le nom.
+mkcache ORCL 300
+assert_rc 0 "19c : la meme Spatial est gratuite" -s ORCL -m options \
+    --licensed-options "Partitioning,Diagnostics Pack,Multitenant,Advanced Compression,Tuning Pack"
 
 echo "== Robustesse =="
 assert_rc 3 "SID inconnu -> UNKNOWN"   -s NOPE -m options

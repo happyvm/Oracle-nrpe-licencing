@@ -41,6 +41,16 @@ produirait que du bruit et de la charge.
 | `Oracle-Lic-Freshness` | `oracle_lic_freshness` | `SID` | 30 min |
 | `Oracle-Lic-Inventory` | `oracle_lic_inventory` | `SID` | 1440 min |
 
+**N'appliquez pas `Oracle-Lic-Options` aux bases Oracle 9i.** La vue
+`DBA_FEATURE_USAGE_STATISTICS` n'existe qu'à partir de 10.1 : le service
+resterait UNKNOWN en permanence. Créez pour ces hôtes un modèle de
+service distinct, sans le contrôle d'options. Voir
+[docs/compatibility.md](../docs/compatibility.md).
+
+**Les hôtes Windows** utilisent les mêmes noms de commandes NRPE, servis
+par NSClient++ au lieu de l'agent NRPE. La configuration Centreon est
+identique — commandes, arguments, seuils et métriques ne changent pas.
+
 **`Oracle-Lic-Freshness` n'est pas optionnel.** Sans lui, une panne
 silencieuse du timer de collecte figerait les données : tous les autres
 services resteraient au vert sur un cache périmé, indéfiniment. C'est le

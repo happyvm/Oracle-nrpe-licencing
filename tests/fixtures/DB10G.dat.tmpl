@@ -1,0 +1,44 @@
+# Oracle 10.2 : DBA_FEATURE_USAGE_STATISTICS existe, mais V$OSSTAT
+# n'expose NUM_CPU_CORES/NUM_CPU_SOCKETS qu'a partir de 11.1, et le
+# multitenant n'existe pas. Le comptage de coeurs repose donc
+# entierement sur l'inventaire OS -- ce que seule la collecte locale
+# permet.
+KV|collect.version|1.1.0
+KV|collect.epoch|@EPOCH@
+KV|collect.date|@DATE@
+KV|inst.sid|DB10G
+KV|inst.oracle_home|/u01/app/oracle/product/10.2.0/db_1
+KV|inst.running|1
+KV|host.name|srvora-10g.example.lan
+KV|host.arch|x86_64
+KV|host.cpu.sockets|2
+KV|host.cpu.cores|8
+KV|host.cpu.threads|16
+KV|host.cpu.reliable|1
+KV|host.virt|none
+KV|host.core_factor|0.5
+KV|host.processor_licenses|4
+KV|inst.version|10.2.0.5.0
+KV|db.version_major|10
+KV|collect.cap.feature_usage|1
+KV|collect.cap.hwm|1
+KV|collect.cap.osstat_cores|0
+KV|collect.cap.multitenant|0
+KV|db.name|DB10G
+KV|db.dbid|778899001
+KV|db.role|PRIMARY
+KV|db.open_mode|READ WRITE
+KV|db.edition|EE
+KV|db.cdb|NO
+KV|db.pdb_count|0
+KV|db.rac_instances|1
+KV|license.sessions_current|40
+KV|license.sessions_highwater|320
+KV|license.sessions_max|0
+KV|collect.status|ok
+OPT|Partitioning|TRUE
+OPT|Spatial|TRUE
+FEAT|Partitioning (user)|TRUE|1200|2026-08-19|2011-03-04|12
+FEAT|Spatial|TRUE|45|2026-07-30|2012-01-01|0
+FEAT|Oracle Java Virtual Machine (system)|TRUE|1200|2026-08-19|2011-03-04|0
+HWM|SESSIONS|410|40
