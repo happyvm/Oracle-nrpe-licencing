@@ -1,0 +1,134 @@
+# =====================================================================
+# licensable-features.map
+#
+# Correspondance entre les noms de DBA_FEATURE_USAGE_STATISTICS et les
+# options / management packs Oracle payants.
+#
+# Reference : Oracle Support Doc ID 1317265.1
+#             (options_packs_usage_statistics.sql) + Oracle Database
+#             Licensing Information User Manual 19c/21c/23ai.
+#
+# Format (6 champs separes par "|") :
+#   1 pattern     expression reguliere ERE, ancree, insensible a la casse,
+#                 comparee au nom exact de la feature
+#   2 option      libelle commercial de l'option a licencier
+#   3 editions    editions ou l'option est vendable (EE, SE2, ALL)
+#   4 min_aux     usage payant seulement si AUX_COUNT depasse ce seuil
+#                 (0 = tout usage compte)
+#   5 free_from   version a partir de laquelle la feature est incluse
+#                 sans supplement ("-" si toujours payante)
+#   6 note        commentaire affiche dans le rapport detaille
+#
+# Les lignes vides et celles commencant par # sont ignorees.
+# Ce fichier est DONNEE, pas code : il se met a jour sans toucher aux
+# scripts. Verifiez-le a chaque changement de politique Oracle.
+# =====================================================================
+
+# --- Partitioning ----------------------------------------------------
+# "Partitioning (system)" est utilise par AWR lui-meme et reste gratuit.
+# Seul "(user)" engage la licence.
+^Partitioning \(user\)$|Partitioning|EE|0|-|Tables ou index partitionnes crees par l'applicatif
+
+# --- Diagnostics Pack ------------------------------------------------
+^ADDM$|Diagnostics Pack|EE|0|-|Automatic Database Diagnostic Monitor
+^AWR Baseline$|Diagnostics Pack|EE|0|-|
+^AWR Baseline Template$|Diagnostics Pack|EE|0|-|
+^AWR Report$|Diagnostics Pack|EE|0|-|Generation de rapports AWR
+^Automatic Workload Repository$|Diagnostics Pack|EE|0|-|
+^Baseline Adaptive Thresholds$|Diagnostics Pack|EE|0|-|
+^Baseline Static Computations$|Diagnostics Pack|EE|0|-|
+^Diagnostic Pack$|Diagnostics Pack|EE|0|-|
+^EM Performance Page$|Diagnostics Pack|EE|0|-|Page Performance d'Enterprise Manager
+^Active Session History$|Diagnostics Pack|EE|0|-|Interrogation de V$ACTIVE_SESSION_HISTORY
+
+# --- Tuning Pack -----------------------------------------------------
+# Le Tuning Pack exige le Diagnostics Pack en prerequis.
+^Automatic SQL Tuning Advisor$|Tuning Pack|EE|0|-|Tache automatique : desactivable si non licencie
+^Real-Time SQL Monitoring$|Tuning Pack|EE|0|-|
+^SQL Access Advisor$|Tuning Pack|EE|0|-|
+^SQL Monitoring and Tuning pages$|Tuning Pack|EE|0|-|
+^SQL Performance Analyzer$|Real Application Testing|EE|0|-|SPA : rattache a RAT, pas au Tuning Pack
+^SQL Profile$|Tuning Pack|EE|0|-|
+^SQL Tuning Advisor$|Tuning Pack|EE|0|-|
+^SQL Tuning Set \(user\)$|Tuning Pack|EE|0|-|
+^Tuning Pack$|Tuning Pack|EE|0|-|
+
+# --- Advanced Compression --------------------------------------------
+^Advanced Index Compression$|Advanced Compression|EE|0|-|
+^Backup HIGH Compression$|Advanced Compression|EE|0|-|Compression RMAN hors BASIC
+^Backup LOW Compression$|Advanced Compression|EE|0|-|Compression RMAN hors BASIC
+^Backup MEDIUM Compression$|Advanced Compression|EE|0|-|Compression RMAN hors BASIC
+^Backup ZLIB Compression$|Advanced Compression|EE|0|-|Compression RMAN hors BASIC
+^Flashback Data Archive$|Advanced Compression|EE|0|12.1.0.2|Inclus depuis 12.1.0.2 (Total Recall)
+^HeatMap$|Advanced Compression|EE|0|-|Active par ILM / ADO
+^Heat Map$|Advanced Compression|EE|0|-|
+^Hybrid Columnar Compression$|Advanced Compression|EE|0|-|Gratuit sur Exadata, ZFSSA et Pillar Axiom
+^Hybrid Columnar Compression Row Level Locking$|Advanced Compression|EE|0|-|
+^Oracle Advanced Network Compression Service$|Advanced Compression|EE|0|-|
+^Oracle Utility Datapump \(Export\)$|Advanced Compression|EE|0|-|Seulement si COMPRESSION=ALL/DATA/METADATA
+^Oracle Utility Datapump \(Import\)$|Advanced Compression|EE|0|-|
+^SecureFile Compression \(user\)$|Advanced Compression|EE|0|-|
+^SecureFile Deduplication \(user\)$|Advanced Compression|EE|0|-|
+
+# --- Advanced Security -----------------------------------------------
+^ASO native encryption and checksumming$|Advanced Security|EE|0|12.1|Inclus depuis 12.1 (network encryption)
+^Backup Encryption$|Advanced Security|EE|0|-|Gratuit si mode password uniquement
+^Data Redaction$|Advanced Security|EE|0|-|
+^Encrypted Tablespaces$|Advanced Security|EE|0|-|
+^Oracle Advanced Security$|Advanced Security|EE|0|-|
+^SecureFile Encryption \(user\)$|Advanced Security|EE|0|-|
+^Transparent Data Encryption$|Advanced Security|EE|0|-|TDE colonne ou tablespace
+
+# --- Real Application Clusters ---------------------------------------
+^Real Application Clusters$|Real Application Clusters|EE|0|-|Inclus en SE2 jusqu'a 19c, retire ensuite
+^Real Application Clusters \(RAC\)$|Real Application Clusters|EE|0|-|
+^Real Application Cluster One Node$|RAC One Node|EE|0|-|
+
+# --- Active Data Guard -----------------------------------------------
+^Active Data Guard - Real-Time Query on Physical Standby$|Active Data Guard|EE|0|-|
+^Global Data Services$|Active Data Guard|EE|0|-|
+^Rolling Upgrade - Data Guard$|Active Data Guard|EE|0|-|
+
+# --- Real Application Testing ----------------------------------------
+^Database Replay: Workload Capture$|Real Application Testing|EE|0|-|
+^Database Replay: Workload Replay$|Real Application Testing|EE|0|-|
+
+# --- Multitenant -----------------------------------------------------
+# AUX_COUNT porte le nombre de PDB. En 19c une PDB unique est incluse en
+# EE ; au-dela l'option Multitenant est requise.
+^Oracle Multitenant$|Multitenant|EE|1|-|Payant a partir de 2 PDB utilisateur (19c)
+^Oracle Pluggable Databases$|Multitenant|EE|1|-|
+
+# --- Database In-Memory ----------------------------------------------
+^In-Memory Column Store$|Database In-Memory|EE|0|-|Declenche par INMEMORY_SIZE > 0
+^In-Memory Aggregation$|Database In-Memory|EE|0|-|
+^In-Memory Expressions$|Database In-Memory|EE|0|-|
+
+# --- Securite avancee ------------------------------------------------
+^Oracle Label Security$|Label Security|EE|0|-|
+^Oracle Database Vault$|Database Vault|EE|0|-|
+^Privilege Capture$|Database Vault|EE|0|-|
+
+# --- OLAP ------------------------------------------------------------
+^OLAP - Analytic Workspaces$|OLAP|EE|0|-|
+^OLAP - Cubes$|OLAP|EE|0|-|
+
+# --- Options devenues gratuites --------------------------------------
+# Spatial et Advanced Analytics sont inclus sans supplement depuis
+# decembre 2019 (annonce Oracle, retroactif sur 12.2+ et 18c/19c).
+# Conservees ici pour signaler l'usage sur les versions anterieures.
+^Spatial$|Spatial and Graph|EE|0|12.2|Gratuit depuis dec. 2019
+^Advanced Analytics$|Advanced Analytics|EE|0|12.2|Gratuit depuis dec. 2019 (Oracle Machine Learning)
+^Data Mining$|Advanced Analytics|EE|0|12.2|Gratuit depuis dec. 2019
+
+# --- Management packs Enterprise Manager -----------------------------
+^Change Management Pack$|Change Management Pack|EE|0|-|
+^Configuration Management Pack$|Configuration Management Pack|EE|0|-|
+^Data Masking Pack$|Data Masking and Subsetting Pack|EE|0|-|
+^Provisioning and Patch Automation Pack$|Lifecycle Management Pack|EE|0|-|
+^Database Lifecycle Management Pack$|Lifecycle Management Pack|EE|0|-|
+^Cloud Management Pack$|Cloud Management Pack|EE|0|-|
+
+# --- Replication -----------------------------------------------------
+^GoldenGate$|GoldenGate|ALL|0|-|Licence produit distincte du moteur
+^Oracle GoldenGate$|GoldenGate|ALL|0|-|
