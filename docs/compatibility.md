@@ -3,12 +3,12 @@
 Périmètre visé : Windows Server 2003 → 2025, RHEL 5 → 9, Oracle 9i → 19c.
 
 Ce document dit ce qui fonctionne, ce qui fonctionne en mode dégradé, et
-ce qui ne peut pas fonctionner. La troisième catégorie n'est pas vide, et
-c'est délibérément la première chose énoncée.
+ce qui ne peut pas fonctionner — cette dernière catégorie n'étant pas
+vide, elle est énoncée en premier.
 
 ---
 
-## Les trois limites dures
+## Trois points structurants
 
 ### 1. Oracle 9i : contrôle partiel, par preuves structurelles
 
@@ -93,7 +93,7 @@ une divergence signifierait que deux serveurs rendent des verdicts
 différents sur des données identiques — ce qui ruine la crédibilité d'un
 contrôle de licence.
 
-La parade est `tests/run_parity_tests.sh` : 26 cas comparent le code
+La parade est `tests/run_parity_tests.sh` : 37 cas comparent le code
 retour et la ligne de statut des **trois** moteurs sur des caches
 identiques. **Toute modification de la logique doit passer ce test.**
 
@@ -189,86 +189,6 @@ comme sous Linux.
 | 19c | oui | oui | oui | oui | oui | supporté |
 | 21c | oui | oui | oui | oui | oui | supporté |
 
-### 18c n'est pas « presque 19c »
-
-Oracle 18c est techniquement **12.2.0.2 renuméroté**. Ses règles de
-licence sont celles de 12.2, pas celles de 19c :
-
-| Règle | 12.2 / 18c | 19c |
-|---|---|---|
-| PDB incluses | **1** | 3 |
-| Privilege Analysis | payant (Database Vault) | **inclus en EE** |
-
-Le numéro 18 induit en erreur : une base 18c à deux PDB requiert
-Multitenant, là où la même configuration est incluse en 19c. Le moteur
-compare les versions numériquement, donc traite 18c correctement — mais
-c'est le genre de détail sur lequel un raisonnement humain se trompe.
-
-### 21c : In-Memory Base Level
-
-Depuis **19.8** et en 21c, Oracle inclut en Enterprise Edition un Column
-Store limité à **16 Go**, activé par `INMEMORY_FORCE=BASE_LEVEL`. Au-delà
-de cette taille, ou sans ce réglage, l'usage relève de l'option payante.
-
-Une règle fondée sur le seul comptage de tables `INMEMORY` accuserait à
-tort toute base utilisant le Base Level — même catégorie d'erreur que le
-seuil Multitenant fixe. Le moteur croise donc trois éléments :
-
-```
-INMEMORY_FORCE = BASE_LEVEL  ET  INMEMORY_SIZE ≤ 16 Go  ET  version ≥ 19.8
-        → inclus, aucun constat
-sinon, si le Column Store est actif
-        → option Database In-Memory requise
-```
-
-Le relevé d'usage remonte `In-Memory Column Store` dès que le Column
-Store sert, sans distinguer le Base Level : ce constat est donc
-explicitement retiré quand la règle produit s'applique, faute de quoi la
-table des features accuserait une base qui n'a rien à licencier.
-
-**Détail d'implémentation qui compte** : `INMEMORY_SIZE` s'exprime en
-octets, et 16 Go valent 17 179 869 184 — au-delà d'un entier 32 bits.
-`CLng` (VBScript) et `[int]::TryParse` (PowerShell) y échouent en
-rendant zéro, silencieusement : une base In-Memory passerait pour
-inactive. Les deux moteurs Windows utilisent donc `CDbl` et
-`[long]::TryParse` pour cette valeur.
-
-### Ce qui distingue 12c de 19c
-
-**Le seuil Multitenant dépend de la version.** Oracle inclut **une seule
-PDB** utilisateur de 12.1 à 18c, et **trois** à partir de 19c. Un seuil
-fixe accuserait à tort une 19c à trois PDB.
-
-C'est pour cette raison que Multitenant est traité par le moteur et non
-par `licensable-features.map` : un champ fixe ne sait pas exprimer une
-règle qui varie avec la version. Le seuil est surchargeable par
-`MULTITENANT_INCLUDED_PDBS`.
-
-> Cette limite a déjà évolué et peut encore changer. Vérifiez-la dans le
-> *Licensing Information User Manual* de votre version exacte avant de
-> vous fier au défaut.
-
-**Preuves structurelles propres à 12.1+ :**
-
-| Preuve | Option |
-|---|---|
-| `inmemory_tables`, `param.inmemory_size` | Database In-Memory (12.1.0.2+) |
-| `redaction_policies` | Advanced Security (Data Redaction) |
-| `ilm_policies`, `param.heat_map` | Advanced Compression (ADO) |
-| `priv_captures` | Database Vault ; **inclus en EE depuis 19c** |
-
-**Devenu gratuit en cours de route** — le plugin en tient compte par la
-version, donc ne signale que là où c'était encore payant :
-
-| Feature | Payante jusqu'à | Incluse depuis |
-|---|---|---|
-| Spatial | 12.1 | 12.2 (annonce déc. 2019) |
-| Advanced Analytics / Data Mining | 12.1 | 12.2 (annonce déc. 2019) |
-| Flashback Data Archive (Total Recall) | 12.1.0.1 | 12.1.0.2 |
-| Privilege Analysis | 18c | 19c |
-| Database In-Memory (≤ 16 Go, Base Level) | 19.7 | 19.8 |
-| ASO network encryption | 11.2 | 12.1 |
-
 ### Ce qui distingue 10g de 11g
 
 **`CONTROL_MANAGEMENT_PACK_ACCESS` (11.1+).** Ce paramètre commande
@@ -339,6 +259,86 @@ Deux détails qui piègent sur les versions anciennes :
   l'intérieur d'un bloc PL/SQL est prise pour une fin de commande par les
   SQL\*Plus anciens.
 
+### Ce qui distingue 12c de 19c
+
+**Le seuil Multitenant dépend de la version.** Oracle inclut **une seule
+PDB** utilisateur de 12.1 à 18c, et **trois** à partir de 19c. Un seuil
+fixe accuserait à tort une 19c à trois PDB.
+
+C'est pour cette raison que Multitenant est traité par le moteur et non
+par `licensable-features.map` : un champ fixe ne sait pas exprimer une
+règle qui varie avec la version. Le seuil est surchargeable par
+`MULTITENANT_INCLUDED_PDBS`.
+
+> Cette limite a déjà évolué et peut encore changer. Vérifiez-la dans le
+> *Licensing Information User Manual* de votre version exacte avant de
+> vous fier au défaut.
+
+**Preuves structurelles propres à 12.1+ :**
+
+| Preuve | Option |
+|---|---|
+| `inmemory_tables`, `param.inmemory_size` | Database In-Memory (12.1.0.2+) |
+| `redaction_policies` | Advanced Security (Data Redaction) |
+| `ilm_policies`, `param.heat_map` | Advanced Compression (ADO) |
+| `priv_captures` | Database Vault ; **inclus en EE depuis 19c** |
+
+**Devenu gratuit en cours de route** — le plugin en tient compte par la
+version, donc ne signale que là où c'était encore payant :
+
+| Feature | Payante jusqu'à | Incluse depuis |
+|---|---|---|
+| Spatial | 12.1 | 12.2 (annonce déc. 2019) |
+| Advanced Analytics / Data Mining | 12.1 | 12.2 (annonce déc. 2019) |
+| Flashback Data Archive (Total Recall) | 12.1.0.1 | 12.1.0.2 |
+| Privilege Analysis | 18c | 19c |
+| Database In-Memory (≤ 16 Go, Base Level) | 19.7 | 19.8 |
+| ASO network encryption | 11.2 | 12.1 |
+
+### 18c n'est pas « presque 19c »
+
+Oracle 18c est techniquement **12.2.0.2 renuméroté**. Ses règles de
+licence sont celles de 12.2, pas celles de 19c :
+
+| Règle | 12.2 / 18c | 19c |
+|---|---|---|
+| PDB incluses | **1** | 3 |
+| Privilege Analysis | payant (Database Vault) | **inclus en EE** |
+
+Le numéro 18 induit en erreur : une base 18c à deux PDB requiert
+Multitenant, là où la même configuration est incluse en 19c. Le moteur
+compare les versions numériquement, donc traite 18c correctement — mais
+c'est le genre de détail sur lequel un raisonnement humain se trompe.
+
+### 21c : In-Memory Base Level
+
+Depuis **19.8** et en 21c, Oracle inclut en Enterprise Edition un Column
+Store limité à **16 Go**, activé par `INMEMORY_FORCE=BASE_LEVEL`. Au-delà
+de cette taille, ou sans ce réglage, l'usage relève de l'option payante.
+
+Une règle fondée sur le seul comptage de tables `INMEMORY` accuserait à
+tort toute base utilisant le Base Level — même catégorie d'erreur que le
+seuil Multitenant fixe. Le moteur croise donc trois éléments :
+
+```
+INMEMORY_FORCE = BASE_LEVEL  ET  INMEMORY_SIZE ≤ 16 Go  ET  version ≥ 19.8
+        → inclus, aucun constat
+sinon, si le Column Store est actif
+        → option Database In-Memory requise
+```
+
+Le relevé d'usage remonte `In-Memory Column Store` dès que le Column
+Store sert, sans distinguer le Base Level : ce constat est donc
+explicitement retiré quand la règle produit s'applique, faute de quoi la
+table des features accuserait une base qui n'a rien à licencier.
+
+**Détail d'implémentation qui compte** : `INMEMORY_SIZE` s'exprime en
+octets, et 16 Go valent 17 179 869 184 — au-delà d'un entier 32 bits.
+`CLng` (VBScript) et `[int]::TryParse` (PowerShell) y échouent en
+rendant zéro, silencieusement : une base In-Memory passerait pour
+inactive. Les deux moteurs Windows utilisent donc `CDbl` et
+`[long]::TryParse` pour cette valeur.
+
 ## Éditions
 
 | Édition | Limite matérielle | Contrôlée |
@@ -360,11 +360,12 @@ Enterprise Edition vers une plateforme Standard.
 |---|---|
 | Moteur awk | exécuté sous **gawk, mawk, nawk** |
 | Scripts shell | exécutés sous **bash 3.2** (compilé pour ce test), **dash**, **bash 5.2** |
-| Suites Unix | 76 tests, rejoués sous chacun des trois shells |
+| Suites Unix | 85 + 23 tests, rejoués sous chacun des trois shells |
 | Analyse statique | `shellcheck -S warning`, sans avertissement |
 | Moteur PowerShell | exécuté sous **PowerShell 7.4** |
 | Moteur VBScript | exécuté sous **cscript** (wine), les cinq modes |
-| Parité des trois moteurs | 26 cas comparés, codes retour et ligne de statut, détection de divergence vérifiée par injection |
+| Volume total | **361 exécutions de test**, neuf jeux de référence (9i à 21c) |
+| Parité des trois moteurs | 37 cas comparés, codes retour et ligne de statut, détection de divergence vérifiée par injection |
 
 **Ce qui n'a pas pu être vérifié par exécution**, et doit l'être en
 recette avant déploiement :

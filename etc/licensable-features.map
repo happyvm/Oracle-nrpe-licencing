@@ -106,6 +106,20 @@
 # via MULTITENANT_INCLUDED_PDBS.
 
 # --- Database In-Memory ----------------------------------------------
+#
+# Ces regles cohabitent volontairement avec la regle produit du moteur.
+# Elles ne font pas double emploi :
+#
+#   - le moteur juge l'ETAT ACTUEL en croisant INMEMORY_FORCE,
+#     INMEMORY_SIZE et la version, ce qui lui permet de reconnaitre le
+#     Base Level (inclus en EE jusqu'a 16 Go depuis 19.8) ;
+#   - ces regles-ci portent le RELEVE D'USAGE, y compris historique :
+#     un usage passe reste visible apres desactivation du Column Store,
+#     que le moteur ne verrait plus.
+#
+# Quand le moteur conclut au Base Level, il retire explicitement
+# "Database In-Memory" de tous les constats : la regle produit prime,
+# sans quoi ces regles accuseraient une base qui n'a rien a licencier.
 ^In-Memory Column Store$|Database In-Memory|EE|0|-|Declenche par INMEMORY_SIZE > 0
 ^In-Memory Aggregation$|Database In-Memory|EE|0|-|
 ^In-Memory Expressions$|Database In-Memory|EE|0|-|
