@@ -255,10 +255,55 @@ assert_rc 0 "12.2 : Multitenant declare -> OK" -s DB12C -m options \
     --licensed-options "Partitioning,Database In-Memory,Advanced Security,Advanced Compression,Multitenant"
 
 echo "== Oracle 12c : preuves propres a la version =="
-assert_out 'inmemory_tables'     "12c : Database In-Memory detecte"  -s DB12C -m options --licensed-options "Partitioning"
+# In-Memory est desormais evalue par la regle produit (taille, force et
+# version) et non par un simple comptage de tables : on verifie le
+# verdict et le detail chiffre, pas le nom d'une cle interne.
+assert_out 'Database In-Memory' "12c : Database In-Memory detecte"  -s DB12C -m options --licensed-options "Partitioning"
+assert_out 'INMEMORY_SIZE=8589934592' "12c : la taille du Column Store est citee" -s DB12C -m options --licensed-options "Partitioning"
 assert_out 'redaction_policies'  "12c : Data Redaction detecte"      -s DB12C -m options --licensed-options "Partitioning"
 assert_out 'ilm_policies'        "12c : politiques ILM detectees"    -s DB12C -m options --licensed-options "Partitioning"
 assert_out 'Advanced Security'   "12c : Redaction -> Advanced Security" -s DB12C -m options --licensed-options "Partitioning"
+
+echo "== Oracle 18c : regles de 12.2, pas de 19c =="
+mkcache DB18C 300
+# 18c est techniquement 12.2.0.2 renumerote : une seule PDB incluse, et
+# Privilege Analysis encore rattache a Database Vault. Le numero 18
+# pourrait faire croire a une parente avec 19c.
+assert_rc 2 "18c, 2 PDB -> Multitenant requis (seuil de 12.2)" -s DB18C -m options \
+    --licensed-options "Partitioning,Database Vault"
+assert_out '1 incluse' "18c : seuil de 1 PDB applique"           -s DB18C -m options --licensed-options "Partitioning,Database Vault"
+assert_out 'Database Vault' "18c : Privilege Analysis encore payant" -s DB18C -m options --licensed-options "Partitioning"
+assert_rc 0 "18c : tout declare -> OK" -s DB18C -m options \
+    --licensed-options "Partitioning,Database Vault,Multitenant"
+# Spatial est gratuit depuis 12.2 : 4 colonnes SDO ne doivent rien declencher.
+out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
+      --evidence "$EVID" --config /dev/null -s DB18C -m options \
+      --licensed-options "Partitioning,Database Vault,Multitenant" 2>&1)
+if grep -q 'Spatial' <<<"$out"; then
+    printf '  FAIL %-58s\n' "18c : Spatial ne doit pas etre facture"; FAIL=$(( FAIL + 1 ))
+else
+    printf '  ok   %-58s\n' "18c : Spatial gratuit depuis 12.2"; PASS=$(( PASS + 1 ))
+fi
+
+echo "== Oracle 21c : In-Memory Base Level =="
+mkcache DB21C 300
+# Depuis 19.8 et en 21c, le Column Store est inclus en EE jusqu'a 16 Go
+# via INMEMORY_FORCE=BASE_LEVEL. Facturer ces bases serait un faux
+# positif, meme categorie d'erreur que le seuil Multitenant fixe.
+assert_rc 0 "21c Base Level -> In-Memory non facture" -s DB21C -m options \
+    --licensed-options "Partitioning"
+assert_rc 0 "21c, 3 PDB -> incluses"                  -s DB21C -m options \
+    --licensed-options "Partitioning"
+# Le releve d'usage remonte In-Memory Column Store : il ne doit pas
+# passer outre la regle du Base Level.
+out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
+      --evidence "$EVID" --config /dev/null -s DB21C -m options \
+      --licensed-options "Partitioning" 2>&1)
+if grep -q 'In-Memory' <<<"$out"; then
+    printf '  FAIL %-58s\n' "21c : le releve d'usage ne doit pas primer"; FAIL=$(( FAIL + 1 ))
+else
+    printf '  ok   %-58s\n' "21c : Base Level prime sur le releve d'usage"; PASS=$(( PASS + 1 ))
+fi
 
 echo "== Robustesse =="
 assert_rc 3 "SID inconnu -> UNKNOWN"   -s NOPE -m options

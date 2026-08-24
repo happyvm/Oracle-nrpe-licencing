@@ -150,7 +150,7 @@ engines="awk"
 [[ $HAVE_VBS -eq 1 ]] && engines="$engines + VBScript (cscript via wine)"
 echo "### Parite entre moteurs : $engines"
 
-for fx in ORCL SE2DB DB9I DB10G DB11G DB12C DOWNDB; do
+for fx in ORCL SE2DB DB9I DB10G DB11G DB12C DB18C DB21C DOWNDB; do
     mkcache "$fx" 300
 done
 
@@ -170,6 +170,10 @@ compare "DB11G usage avere"            DB11G -m options
 compare "DB12C Multitenant 2 PDB"      DB12C -m options --licensed-options "Partitioning"
 compare "DB12C tout declare"           DB12C -m options --licensed-options "Partitioning,Database In-Memory,Advanced Security,Advanced Compression,Multitenant"
 compare "ORCL 19c 3 PDB incluses"      ORCL  -m options --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
+compare "DB18C seuil de 12.2"          DB18C -m options --licensed-options "Partitioning"
+compare "DB18C tout declare"           DB18C -m options --licensed-options "Partitioning,Database Vault,Multitenant"
+compare "DB21C In-Memory Base Level"   DB21C -m options --licensed-options "Partitioning"
+compare "DB21C inventaire"             DB21C -m inventory
 compare "DOWNDB sans feature"          DOWNDB -m options
 
 echo "== Mode processors =="

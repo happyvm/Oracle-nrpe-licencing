@@ -87,7 +87,13 @@ flashback_archives|Advanced Compression|EE|0|12.1.0.2|Flashback Data Archive (To
 
 # --- Preuves disponibles a partir d'Oracle 12.1 ----------------------
 
-inmemory_tables|Database In-Memory|EE|0|-|Tables marquees INMEMORY
+# inmemory_tables est volontairement absent de cette table.
+#
+# Depuis 19.8 et en 21c, le "Base Level" du Column Store est inclus en
+# Enterprise Edition jusqu'a 16 Go, active par INMEMORY_FORCE=BASE_LEVEL.
+# Une regle fondee sur le seul comptage de tables accuserait a tort ces
+# bases. Le controle est donc realise par le moteur, qui croise
+# INMEMORY_FORCE, INMEMORY_SIZE et la version.
 redaction_policies|Advanced Security|EE|0|-|Politiques Data Redaction
 ilm_policies|Advanced Compression|EE|0|-|Politiques ILM / Automatic Data Optimization
 

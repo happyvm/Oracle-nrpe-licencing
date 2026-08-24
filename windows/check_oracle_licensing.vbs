@@ -335,6 +335,28 @@ Function GetKVLong(sKey)
     GetKVLong = ToLong(GetKV(sKey, "0"))
 End Function
 
+' INMEMORY_SIZE s'exprime en octets : 16 Go valent 17179869184, ce qui
+' deborde CLng et provoque l'erreur 6. ToLong rendrait alors 0, et une
+' base In-Memory passerait pour inactive. CDbl porte ces valeurs sans
+' perte utile a l'echelle qui nous interesse.
+Function ToNumber(sValue)
+    Dim s, i, c, sDigits
+    sDigits = ""
+    s = Trim(sValue & "")
+    For i = 1 To Len(s)
+        c = Mid(s, i, 1)
+        If c >= "0" And c <= "9" Then sDigits = sDigits & c
+    Next
+    If sDigits = "" Then
+        ToNumber = 0
+    Else
+        On Error Resume Next
+        ToNumber = CDbl(sDigits)
+        If Err.Number <> 0 Then ToNumber = 0
+        On Error GoTo 0
+    End If
+End Function
+
 ' =====================================================================
 ' Arguments
 ' =====================================================================
@@ -472,6 +494,31 @@ Function IsLicensed(sOption)
     Next
 End Function
 
+' Database In-Memory : payant, ou inclus au titre du Base Level ?
+'
+' Depuis 19.8 et en 21c, Oracle inclut en Enterprise Edition un Column
+' Store limite a 16 Go, active par INMEMORY_FORCE=BASE_LEVEL. Au-dela de
+' cette taille, ou sans ce reglage, l'usage releve de l'option payante.
+'
+' Une regle fondee sur le seul comptage de tables INMEMORY accuserait a
+' tort toute base utilisant le Base Level.
+Function InMemoryStatus()
+    Dim sz, nTables, sForce
+    sz = ToNumber(GetKV("param.inmemory_size", "0"))
+    nTables = 0
+    If gOBJ.Exists("inmemory_tables") Then nTables = ToLong(gOBJ("inmemory_tables"))
+    If sz <= 0 And nTables <= 0 Then
+        InMemoryStatus = "none"
+        Exit Function
+    End If
+    sForce = UCase(Replace(Replace(Trim(GetKV("param.inmemory_force", "")), " ", ""), vbTab, ""))
+    If sForce = "BASE_LEVEL" And sz <= 17179869184 And VersionGe(gDbVersion, "19.8") Then
+        InMemoryStatus = "base_level"
+    Else
+        InMemoryStatus = "licensable"
+    End If
+End Function
+
 ' Nombre de PDB utilisateur incluses sans licence Multitenant.
 '
 ' Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
@@ -529,7 +576,7 @@ Function ModeOptions()
     Dim aFeat, i, r, sFeature, nDet, sUsed, nAux, nMatched
     Dim oRe, sOpt, sNote, sFirst, sLast, sEntry
     Dim nNow, nPast, nCov, nEdt, nExp, nStatus, sLabel, sStale, sMsg, sPartial
-    Dim aKeys, k, e, nCnt, oExposed, sCmpa, nPdb, nMtIncl
+    Dim aKeys, k, e, nCnt, oExposed, sCmpa, nPdb, nMtIncl, sImStat
 
     Set oViolNow  = CreateObject("Scripting.Dictionary")
     Set oViolPast = CreateObject("Scripting.Dictionary")
@@ -647,6 +694,41 @@ Function ModeOptions()
         If oViolPast.Exists(aKeys(i)) Then oViolPast.Remove aKeys(i)
         If oCovered.Exists(aKeys(i))  Then oCovered.Remove aKeys(i)
     Next
+
+    ' Database In-Memory : croise deux parametres et la version, ce
+    ' qu'une regle de la table des preuves ne saurait exprimer.
+    sImStat = InMemoryStatus()
+    If sImStat = "base_level" Then
+        ' Le releve d'usage remonte "In-Memory Column Store" des que le
+        ' Column Store sert, sans distinguer le Base Level.
+        oFreed("Database In-Memory") = 1
+        If oViolNow.Exists("Database In-Memory")  Then oViolNow.Remove "Database In-Memory"
+        If oViolPast.Exists("Database In-Memory") Then oViolPast.Remove "Database In-Memory"
+        If oCovered.Exists("Database In-Memory")  Then oCovered.Remove "Database In-Memory"
+        If oDetail.Exists("Database In-Memory")   Then oDetail.Remove "Database In-Memory"
+    ElseIf sImStat = "licensable" Then
+        sOpt = "Database In-Memory"
+        sEntry = vbLf & "    - Column Store actif : INMEMORY_SIZE=" & GetKV("param.inmemory_size", "0") & _
+                 ", INMEMORY_FORCE=" & GetKV("param.inmemory_force", "-") & ", "
+        If gOBJ.Exists("inmemory_tables") Then
+            sEntry = sEntry & gOBJ("inmemory_tables")
+        Else
+            sEntry = sEntry & "0"
+        End If
+        sEntry = sEntry & " table(s) INMEMORY [regle produit]"
+        If oDetail.Exists(sOpt) Then
+            oDetail(sOpt) = oDetail(sOpt) & sEntry
+        Else
+            oDetail(sOpt) = sEntry
+        End If
+        If gEdition <> "EE" And gEdition <> "UNKNOWN" Then
+            oWrongEd(sOpt) = 1
+        ElseIf IsLicensed(sOpt) Then
+            oCovered(sOpt) = 1
+        Else
+            oViolNow(sOpt) = 1
+        End If
+    End If
 
     ' Multitenant : traite ici plutot que par la table des features, son
     ' seuil dependant de la version installee.

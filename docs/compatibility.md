@@ -185,7 +185,53 @@ comme sous Linux.
 | 10.1 / 10.2 | oui | oui | non | non | non | supporté |
 | 11.1 / 11.2 | oui | oui | oui | **oui** | non | supporté |
 | 12.1 / 12.2 | oui | oui | oui | oui | oui | supporté |
-| 18c / 19c | oui | oui | oui | oui | oui | supporté |
+| 18c | oui | oui | oui | oui | oui | supporté — **règles de 12.2** |
+| 19c | oui | oui | oui | oui | oui | supporté |
+| 21c | oui | oui | oui | oui | oui | supporté |
+
+### 18c n'est pas « presque 19c »
+
+Oracle 18c est techniquement **12.2.0.2 renuméroté**. Ses règles de
+licence sont celles de 12.2, pas celles de 19c :
+
+| Règle | 12.2 / 18c | 19c |
+|---|---|---|
+| PDB incluses | **1** | 3 |
+| Privilege Analysis | payant (Database Vault) | **inclus en EE** |
+
+Le numéro 18 induit en erreur : une base 18c à deux PDB requiert
+Multitenant, là où la même configuration est incluse en 19c. Le moteur
+compare les versions numériquement, donc traite 18c correctement — mais
+c'est le genre de détail sur lequel un raisonnement humain se trompe.
+
+### 21c : In-Memory Base Level
+
+Depuis **19.8** et en 21c, Oracle inclut en Enterprise Edition un Column
+Store limité à **16 Go**, activé par `INMEMORY_FORCE=BASE_LEVEL`. Au-delà
+de cette taille, ou sans ce réglage, l'usage relève de l'option payante.
+
+Une règle fondée sur le seul comptage de tables `INMEMORY` accuserait à
+tort toute base utilisant le Base Level — même catégorie d'erreur que le
+seuil Multitenant fixe. Le moteur croise donc trois éléments :
+
+```
+INMEMORY_FORCE = BASE_LEVEL  ET  INMEMORY_SIZE ≤ 16 Go  ET  version ≥ 19.8
+        → inclus, aucun constat
+sinon, si le Column Store est actif
+        → option Database In-Memory requise
+```
+
+Le relevé d'usage remonte `In-Memory Column Store` dès que le Column
+Store sert, sans distinguer le Base Level : ce constat est donc
+explicitement retiré quand la règle produit s'applique, faute de quoi la
+table des features accuserait une base qui n'a rien à licencier.
+
+**Détail d'implémentation qui compte** : `INMEMORY_SIZE` s'exprime en
+octets, et 16 Go valent 17 179 869 184 — au-delà d'un entier 32 bits.
+`CLng` (VBScript) et `[int]::TryParse` (PowerShell) y échouent en
+rendant zéro, silencieusement : une base In-Memory passerait pour
+inactive. Les deux moteurs Windows utilisent donc `CDbl` et
+`[long]::TryParse` pour cette valeur.
 
 ### Ce qui distingue 12c de 19c
 
@@ -220,6 +266,7 @@ version, donc ne signale que là où c'était encore payant :
 | Advanced Analytics / Data Mining | 12.1 | 12.2 (annonce déc. 2019) |
 | Flashback Data Archive (Total Recall) | 12.1.0.1 | 12.1.0.2 |
 | Privilege Analysis | 18c | 19c |
+| Database In-Memory (≤ 16 Go, Base Level) | 19.7 | 19.8 |
 | ASO network encryption | 11.2 | 12.1 |
 
 ### Ce qui distingue 10g de 11g

@@ -233,7 +233,7 @@ Périmètre couvert : **Windows Server 2003 → 2025**, **RHEL 5 → 9**,
 | RHEL 5 → 9 | supporté (shell POSIX + awk ; replis pour `lscpu`, `timeout`, `systemd`) |
 | Windows Server 2008 R2 → 2025 | supporté via **PowerShell 2.0+** (voie principale) |
 | Windows Server 2003, et 2008 en PowerShell 1.0 | supporté via **VBScript / Windows Script Host**, uniquement là où PowerShell manque |
-| Oracle 10.1 → 19c | supporté |
+| Oracle 10.1 → 21c | supporté |
 | Oracle 9i | **dégradé** — voir ci-dessous |
 
 **Trois limites à connaître avant de déployer :**
