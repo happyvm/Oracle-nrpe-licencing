@@ -339,7 +339,7 @@ End Function
 ' Arguments
 ' =====================================================================
 Dim gSid, gMode, gWarn, gCrit, gLicOptions, gLicProcessors
-Dim gMaxCacheAge, gIgnoreHistorical, gDetail
+Dim gMaxCacheAge, gIgnoreHistorical, gDetail, gMtIncluded
 Dim gCacheDir, gMapFile, gEvidenceFile, gConfigFile, gNowOverride
 Dim oArgs, oCfg
 
@@ -392,6 +392,7 @@ gMapFile       = ArgValue(oArgs, "MapFile")
 gEvidenceFile  = ArgValue(oArgs, "EvidenceFile")
 gConfigFile    = ArgValue(oArgs, "ConfigFile")
 gNowOverride   = ArgValue(oArgs, "NowEpoch")
+gMtIncluded       = ArgValue(oArgs, "MultitenantIncluded")
 gIgnoreHistorical = oArgs.Exists("IgnoreHistorical")
 gDetail           = oArgs.Exists("Detail")
 
@@ -471,6 +472,28 @@ Function IsLicensed(sOption)
     Next
 End Function
 
+' Nombre de PDB utilisateur incluses sans licence Multitenant.
+'
+' Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
+' trois a partir de 19c. Un seuil fixe produirait un faux positif sur
+' 19c -- accuser a tort est pire qu'un faux negatif, car cela fait
+' ignorer les vraies alertes.
+'
+' Verifiez la valeur applicable dans le Licensing Information User
+' Manual de votre version exacte : elle a deja change, elle peut encore
+' changer.
+Function MultitenantIncluded()
+    If Len(gMtIncluded) > 0 Then
+        MultitenantIncluded = ToLong(gMtIncluded)
+        Exit Function
+    End If
+    If VersionGe(gDbVersion, "19") Then
+        MultitenantIncluded = 3
+    Else
+        MultitenantIncluded = 1
+    End If
+End Function
+
 ' Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
 '
 ' Ce parametre (11.1 et suivants) commande l'acces aux management packs.
@@ -506,7 +529,7 @@ Function ModeOptions()
     Dim aFeat, i, r, sFeature, nDet, sUsed, nAux, nMatched
     Dim oRe, sOpt, sNote, sFirst, sLast, sEntry
     Dim nNow, nPast, nCov, nEdt, nExp, nStatus, sLabel, sStale, sMsg, sPartial
-    Dim aKeys, k, e, nCnt, oExposed, sCmpa
+    Dim aKeys, k, e, nCnt, oExposed, sCmpa, nPdb, nMtIncl
 
     Set oViolNow  = CreateObject("Scripting.Dictionary")
     Set oViolPast = CreateObject("Scripting.Dictionary")
@@ -624,6 +647,28 @@ Function ModeOptions()
         If oViolPast.Exists(aKeys(i)) Then oViolPast.Remove aKeys(i)
         If oCovered.Exists(aKeys(i))  Then oCovered.Remove aKeys(i)
     Next
+
+    ' Multitenant : traite ici plutot que par la table des features, son
+    ' seuil dependant de la version installee.
+    nPdb = GetKVLong("db.pdb_count")
+    nMtIncl = MultitenantIncluded()
+    If nPdb > nMtIncl Then
+        sOpt = "Multitenant"
+        sEntry = vbLf & "    - " & nPdb & " PDB utilisateur, " & nMtIncl & _
+                 " incluse(s) en Oracle " & gDbVersion & " [regle produit]"
+        If oDetail.Exists(sOpt) Then
+            oDetail(sOpt) = oDetail(sOpt) & sEntry
+        Else
+            oDetail(sOpt) = sEntry
+        End If
+        If gEdition <> "EE" And gEdition <> "UNKNOWN" Then
+            oWrongEd(sOpt) = 1
+        ElseIf IsLicensed(sOpt) Then
+            oCovered(sOpt) = 1
+        Else
+            oViolNow(sOpt) = 1
+        End If
+    End If
 
     ' Exposition aux management packs : on ne signale que ce qui n'est
     ' pas deja constate ailleurs.

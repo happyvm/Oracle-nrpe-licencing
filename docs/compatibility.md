@@ -187,6 +187,41 @@ comme sous Linux.
 | 12.1 / 12.2 | oui | oui | oui | oui | oui | supporté |
 | 18c / 19c | oui | oui | oui | oui | oui | supporté |
 
+### Ce qui distingue 12c de 19c
+
+**Le seuil Multitenant dépend de la version.** Oracle inclut **une seule
+PDB** utilisateur de 12.1 à 18c, et **trois** à partir de 19c. Un seuil
+fixe accuserait à tort une 19c à trois PDB.
+
+C'est pour cette raison que Multitenant est traité par le moteur et non
+par `licensable-features.map` : un champ fixe ne sait pas exprimer une
+règle qui varie avec la version. Le seuil est surchargeable par
+`MULTITENANT_INCLUDED_PDBS`.
+
+> Cette limite a déjà évolué et peut encore changer. Vérifiez-la dans le
+> *Licensing Information User Manual* de votre version exacte avant de
+> vous fier au défaut.
+
+**Preuves structurelles propres à 12.1+ :**
+
+| Preuve | Option |
+|---|---|
+| `inmemory_tables`, `param.inmemory_size` | Database In-Memory (12.1.0.2+) |
+| `redaction_policies` | Advanced Security (Data Redaction) |
+| `ilm_policies`, `param.heat_map` | Advanced Compression (ADO) |
+| `priv_captures` | Database Vault ; **inclus en EE depuis 19c** |
+
+**Devenu gratuit en cours de route** — le plugin en tient compte par la
+version, donc ne signale que là où c'était encore payant :
+
+| Feature | Payante jusqu'à | Incluse depuis |
+|---|---|---|
+| Spatial | 12.1 | 12.2 (annonce déc. 2019) |
+| Advanced Analytics / Data Mining | 12.1 | 12.2 (annonce déc. 2019) |
+| Flashback Data Archive (Total Recall) | 12.1.0.1 | 12.1.0.2 |
+| Privilege Analysis | 18c | 19c |
+| ASO network encryption | 11.2 | 12.1 |
+
 ### Ce qui distingue 10g de 11g
 
 **`CONTROL_MANAGEMENT_PACK_ACCESS` (11.1+).** Ce paramètre commande

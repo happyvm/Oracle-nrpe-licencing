@@ -37,6 +37,7 @@ LICENSED_OPTIONS=
 LICENSED_PROCESSORS=
 MAX_CACHE_AGE=93600
 IGNORE_HISTORICAL=0
+MULTITENANT_INCLUDED_PDBS=
 VERBOSE=0
 
 usage() {
@@ -54,6 +55,8 @@ Controle la conformite des licences Oracle a partir du cache local.
       --licensed-processors N Nombre de licences Processor detenues
       --max-cache-age S   Age maximal du cache en secondes (defaut: $MAX_CACHE_AGE)
       --ignore-historical Ne signaler que les options en cours d'utilisation
+      --multitenant-included N  PDB utilisateur incluses sans licence
+                          Multitenant (defaut: 1 avant 19c, 3 ensuite)
       --cache-dir REP     Repertoire de cache
       --map FICHIER       Table de correspondance des features
       --evidence FICHIER  Table des preuves structurelles
@@ -93,6 +96,7 @@ while [ $# -gt 0 ]; do
         --licensed-processors) cli_licensed_processors=$2; shift 2 ;;
         --max-cache-age)       MAX_CACHE_AGE=$2; shift 2 ;;
         --ignore-historical)   IGNORE_HISTORICAL=1; shift ;;
+        --multitenant-included) MULTITENANT_INCLUDED_PDBS=$2; shift 2 ;;
         --cache-dir)           CACHE_DIR=$2; shift 2 ;;
         --map)                 MAP_FILE=$2; shift 2 ;;
         --evidence)            EVIDENCE_FILE=$2; shift 2 ;;
@@ -142,6 +146,7 @@ NOW=`date +%s`
     -v warn="$WARN" \
     -v crit="$CRIT" \
     -v ignore_historical="$IGNORE_HISTORICAL" \
+    -v mt_included="$MULTITENANT_INCLUDED_PDBS" \
     -v verbose="$VERBOSE" \
     -f "$AWK_FILE" \
     "$MAP_FILE" "$EVIDENCE_FILE" "$CACHE_FILE"

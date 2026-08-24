@@ -94,10 +94,16 @@
 ^Database Replay: Workload Replay$|Real Application Testing|EE|0|-|
 
 # --- Multitenant -----------------------------------------------------
-# AUX_COUNT porte le nombre de PDB. En 19c une PDB unique est incluse en
-# EE ; au-dela l'option Multitenant est requise.
-^Oracle Multitenant$|Multitenant|EE|1|-|Payant a partir de 2 PDB utilisateur (19c)
-^Oracle Pluggable Databases$|Multitenant|EE|1|-|
+# Volontairement absent de cette table.
+#
+# Le nombre de PDB incluses sans licence Multitenant depend de la
+# version : une seule de 12.1 a 18c, trois a partir de 19c. Un seuil
+# fixe produirait un faux positif sur 19c -- accuser a tort est pire
+# qu'un faux negatif, car cela fait ignorer les vraies alertes.
+#
+# Le controle est donc realise par le moteur, qui applique le seuil
+# correspondant a la version. Il est surchargeable par la configuration
+# via MULTITENANT_INCLUDED_PDBS.
 
 # --- Database In-Memory ----------------------------------------------
 ^In-Memory Column Store$|Database In-Memory|EE|0|-|Declenche par INMEMORY_SIZE > 0

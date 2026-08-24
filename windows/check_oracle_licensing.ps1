@@ -37,6 +37,7 @@ param(
     [string] $LicensedProcessors,
     [int]    $MaxCacheAge = 93600,
     [switch] $IgnoreHistorical,
+    [string] $MultitenantIncluded,
     [switch] $Detail,
     [string] $CacheDir   = 'C:\ProgramData\oracle-licensing\cache',
     [string] $MapFile      = 'C:\ProgramData\oracle-licensing\licensable-features.map',
@@ -259,6 +260,25 @@ function Join-SortedKeys($Table) {
 # =====================================================================
 # Mode "options"
 # =====================================================================
+# Nombre de PDB utilisateur incluses sans licence Multitenant.
+#
+# Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
+# trois a partir de 19c. Un seuil fixe produirait un faux positif sur
+# 19c -- accuser a tort est pire qu'un faux negatif, car cela fait
+# ignorer les vraies alertes.
+#
+# Verifiez la valeur applicable dans le Licensing Information User
+# Manual de votre version exacte : elle a deja change, elle peut encore
+# changer.
+function Get-MultitenantIncluded {
+    if ($MultitenantIncluded) {
+        $n = 0
+        if ([int]::TryParse($MultitenantIncluded, [ref] $n)) { return $n }
+    }
+    if (Test-VersionGe $DbVersion '19') { return 3 }
+    return 1
+}
+
 # Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
 #
 # Ce parametre (11.1 et suivants) commande l'acces aux management packs.
@@ -364,6 +384,20 @@ function Invoke-ModeOptions {
     # Une option deja en infraction courante ne doit pas etre recomptee.
     foreach ($o in @($violNow.Keys))      { $violPast.Remove($o) }
     foreach ($o in @($wrongEdition.Keys)) { $violNow.Remove($o); $violPast.Remove($o); $covered.Remove($o) }
+
+    # Multitenant : traite ici plutot que par la table des features, son
+    # seuil dependant de la version installee.
+    $nPdb = Get-KVInt 'db.pdb_count'
+    $mtIncl = Get-MultitenantIncluded
+    if ($nPdb -gt $mtIncl) {
+        $opt = 'Multitenant'
+        $entry = "`n    - {0} PDB utilisateur, {1} incluse(s) en Oracle {2} [regle produit]" -f $nPdb, $mtIncl, $DbVersion
+        if ($detail.ContainsKey($opt)) { $detail[$opt] = $detail[$opt] + $entry }
+        else                           { $detail[$opt] = $entry }
+        if ($Edition -ne 'EE' -and $Edition -ne 'UNKNOWN') { $wrongEdition[$opt] = 1 }
+        elseif (Test-IsLicensed $opt)                      { $covered[$opt] = 1 }
+        else                                               { $violNow[$opt] = 1 }
+    }
 
     # Exposition aux management packs : on ne signale que ce qui n'est
     # pas deja constate ailleurs.

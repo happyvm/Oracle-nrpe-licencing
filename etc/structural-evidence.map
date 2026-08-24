@@ -84,3 +84,13 @@ securefile_encrypted|Advanced Security|EE|0|-|LOB SecureFile chiffres
 
 # Facture sous le nom Total Recall jusqu'a 12.1.0.1, inclus depuis 12.1.0.2.
 flashback_archives|Advanced Compression|EE|0|12.1.0.2|Flashback Data Archive (Total Recall)
+
+# --- Preuves disponibles a partir d'Oracle 12.1 ----------------------
+
+inmemory_tables|Database In-Memory|EE|0|-|Tables marquees INMEMORY
+redaction_policies|Advanced Security|EE|0|-|Politiques Data Redaction
+ilm_policies|Advanced Compression|EE|0|-|Politiques ILM / Automatic Data Optimization
+
+# Privilege Analysis relevait de Database Vault jusqu'en 18c ; il est
+# inclus en Enterprise Edition depuis 19c.
+priv_captures|Database Vault|EE|0|19.1|Captures de privileges ; inclus en EE depuis 19c

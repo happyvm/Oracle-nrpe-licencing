@@ -215,6 +215,17 @@ BEGIN
     kv_dyn('param.statistics_level',
         'SELECT value FROM v$parameter WHERE name = ''statistics_level''');
 
+    -- INMEMORY_SIZE > 0 active le Column Store (12.1.0.2 et suivants),
+    -- qui est l'option Database In-Memory. Le parametre suffit : la
+    -- zone memoire est allouee des l'ouverture, meme sans table peuplee.
+    kv_dyn('param.inmemory_size',
+        'SELECT value FROM v$parameter WHERE name = ''inmemory_size''');
+
+    -- HEAT_MAP a ON alimente le suivi ILM, rattache a Advanced
+    -- Compression (12.1 et suivants).
+    kv_dyn('param.heat_map',
+        'SELECT value FROM v$parameter WHERE name = ''heat_map''');
+
     -- ----------------------------------------------------------------
     -- V$LICENSE
     -- Les colonnes de coeurs et de sockets n'existent qu'a partir de 11.1.
@@ -430,6 +441,24 @@ BEGIN
     -- Flashback Data Archive (11.1) : facture sous le nom Total Recall
     -- jusqu'a 12.1.0.1, inclus depuis 12.1.0.2.
     obj_dyn('flashback_archives', 'SELECT COUNT(*) FROM dba_flashback_archive');
+
+    -- --- Preuves propres a Oracle 12.1 et suivants -------------------
+
+    -- Database In-Memory : tables effectivement marquees INMEMORY.
+    obj_dyn('inmemory_tables',
+        'SELECT COUNT(*) FROM dba_tables WHERE inmemory = ''ENABLED''' ||
+        ' AND owner NOT IN (' || c_sys || ')');
+
+    -- Data Redaction : rattache a Advanced Security.
+    obj_dyn('redaction_policies', 'SELECT COUNT(*) FROM redaction_policies');
+
+    -- Automatic Data Optimization : politiques ILM, rattachees a
+    -- Advanced Compression.
+    obj_dyn('ilm_policies', 'SELECT COUNT(*) FROM dba_ilmpolicies');
+
+    -- Privilege Analysis : rattache a Database Vault jusqu'en 18c,
+    -- inclus en Enterprise Edition depuis 19c.
+    obj_dyn('priv_captures', 'SELECT COUNT(*) FROM dba_priv_captures');
 
     -- Sentinelle : son absence signale un rapport tronque.
     kv('collect.sql_complete', '1');

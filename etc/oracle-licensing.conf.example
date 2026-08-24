@@ -78,6 +78,14 @@ LICENSED_OPTIONS="Partitioning,Diagnostics Pack,Tuning Pack"
 # Nombre de licences Processor detenues pour cet hote.
 LICENSED_PROCESSORS=""
 
+# Nombre de PDB utilisateur incluses sans licence Multitenant.
+#
+# Laisser vide pour appliquer la regle par version : une seule PDB de
+# 12.1 a 18c, trois a partir de 19c. Cette limite a deja evolue et peut
+# encore le faire : verifiez-la dans le Licensing Information User
+# Manual de votre version exacte, et fixez-la ici si elle differe.
+MULTITENANT_INCLUDED_PDBS=""
+
 # --- Controle --------------------------------------------------------
 # Age maximal du cache avant alerte, en secondes. 93600 s = 26 h : laisse
 # du jeu a un run quotidien decale sans ouvrir une fenetre d'aveuglement.

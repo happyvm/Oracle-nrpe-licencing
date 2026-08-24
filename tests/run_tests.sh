@@ -93,8 +93,16 @@ assert_out 'Tuning Pack' "usage historique du Tuning Pack signale" \
     --licensed-options "Partitioning,Diagnostics Pack,Multitenant,Advanced Compression"
 assert_out 'Advanced Compression' "Advanced Index Compression -> Advanced Compression" \
     -s ORCL -m options --licensed-options "Partitioning"
-assert_out 'Multitenant' "3 PDB -> option Multitenant requise" \
-    -s ORCL -m options --licensed-options "Partitioning"
+# Ce test attendait auparavant que 3 PDB declenchent Multitenant sur
+# 19c. C'etait le faux positif corrige depuis : 19c en inclut trois.
+out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
+      --evidence "$EVID" --config /dev/null -s ORCL -m options \
+      --licensed-options "Partitioning" 2>&1)
+if grep -q 'Multitenant' <<<"$out"; then
+    printf '  FAIL %-58s\n' "19c a 3 PDB ne doit pas exiger Multitenant"; FAIL=$(( FAIL + 1 ))
+else
+    printf '  ok   %-58s\n' "19c a 3 PDB : Multitenant non exige"; PASS=$(( PASS + 1 ))
+fi
 
 echo "== Absence de faux positifs =="
 for noise in 'Partitioning \(system\)' 'SecureFiles \(user\)' 'Java Virtual Machine' 'Spatial'; do
@@ -227,6 +235,30 @@ echo "== Oracle 11g : preuves propres a la version =="
 assert_out 'oltp_compressed_tables' "11g : compression OLTP detectee" -s DB11G -m options
 assert_out 'securefile_compressed'  "11g : LOB SecureFile compresses detectes" -s DB11G -m options
 assert_out 'Advanced Compression'   "11g : rattachee a la bonne option" -s DB11G -m options
+
+echo "== Multitenant : seuil dependant de la version =="
+mkcache DB12C 300
+mkcache ORCL 300
+# Une seule PDB incluse jusqu'a 18c, trois a partir de 19c. Un seuil fixe
+# accuserait a tort une 19c a trois PDB -- le faux positif etant le pire
+# defaut d'un controle de conformite, il fait ignorer les vraies alertes.
+assert_rc 2 "12.2, 2 PDB -> Multitenant requis" -s DB12C -m options \
+    --licensed-options "Partitioning,Database In-Memory,Advanced Security,Advanced Compression"
+assert_out '1 incluse' "12.2 : le seuil applique est affiche" -s DB12C -m options \
+    --licensed-options "Partitioning,Database In-Memory,Advanced Security,Advanced Compression"
+assert_rc 0 "19c, 3 PDB -> incluses, aucune alerte" -s ORCL -m options \
+    --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
+assert_rc 2 "seuil force a 1 : la 19c redevient en infraction" -s ORCL -m options \
+    --multitenant-included 1 \
+    --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
+assert_rc 0 "12.2 : Multitenant declare -> OK" -s DB12C -m options \
+    --licensed-options "Partitioning,Database In-Memory,Advanced Security,Advanced Compression,Multitenant"
+
+echo "== Oracle 12c : preuves propres a la version =="
+assert_out 'inmemory_tables'     "12c : Database In-Memory detecte"  -s DB12C -m options --licensed-options "Partitioning"
+assert_out 'redaction_policies'  "12c : Data Redaction detecte"      -s DB12C -m options --licensed-options "Partitioning"
+assert_out 'ilm_policies'        "12c : politiques ILM detectees"    -s DB12C -m options --licensed-options "Partitioning"
+assert_out 'Advanced Security'   "12c : Redaction -> Advanced Security" -s DB12C -m options --licensed-options "Partitioning"
 
 echo "== Robustesse =="
 assert_rc 3 "SID inconnu -> UNKNOWN"   -s NOPE -m options

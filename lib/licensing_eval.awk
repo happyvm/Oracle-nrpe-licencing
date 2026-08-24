@@ -213,9 +213,25 @@ function packs_exposed(value, arr,    v, n) {
     return n
 }
 
+# Nombre de PDB utilisateur incluses sans licence Multitenant.
+#
+# Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
+# trois a partir de 19c. Un seuil fixe produirait un faux positif sur
+# 19c -- accuser a tort est pire qu'un faux negatif, car cela fait
+# ignorer les vraies alertes.
+#
+# Verifiez la valeur applicable dans le Licensing Information User
+# Manual de votre version exacte : elle a deja change, elle peut encore
+# changer. MULTITENANT_INCLUDED_PDBS permet de la fixer.
+function multitenant_included(    v) {
+    if (mt_included != "") return mt_included + 0
+    if (version_ge(version, "19")) return 3
+    return 1
+}
+
 function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
                           status, label, parts, np, stale, o, grp, msg,
-                          cnt, nstruct, partial, cmpa, n_exp) {
+                          cnt, nstruct, partial, cmpa, n_exp, npdb) {
     if (nrules == 0) {
         printf "UNKNOWN - table de correspondance vide ou illisible\n"
         return UNKNOWN
@@ -299,6 +315,20 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
     # Une option deja en infraction courante ne doit pas etre recomptee.
     for (o in viol_now)      delete viol_past[o]
     for (o in wrong_edition) { delete viol_now[o]; delete viol_past[o]; delete covered[o] }
+
+    # ------------------------------------------------------------------
+    # Multitenant : traite ici plutot que par la table des features,
+    # son seuil dependant de la version installee.
+    # ------------------------------------------------------------------
+    npdb = kv["db.pdb_count"] + 0
+    if (npdb > multitenant_included()) {
+        opt = "Multitenant"
+        detail[opt] = detail[opt] sprintf("\n    - %d PDB utilisateur, %d incluse(s) en Oracle %s [regle produit]", \
+                      npdb, multitenant_included(), version)
+        if (edition != "EE" && edition != "UNKNOWN") wrong_edition[opt] = 1
+        else if (is_licensed(opt))                   covered[opt] = 1
+        else                                         viol_now[opt] = 1
+    }
 
     # ------------------------------------------------------------------
     # Exposition aux management packs (11.1 et suivants).
