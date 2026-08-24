@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 #
-# Test de parite entre le moteur Unix (lib/licensing_eval.awk) et le
-# moteur Windows (windows/check_oracle_licensing.ps1).
+# Test de parite entre les trois moteurs d'evaluation :
+#   - Unix     : lib/licensing_eval.awk
+#   - Windows  : windows/check_oracle_licensing.ps1  (PowerShell 2.0+)
+#   - Windows  : windows/check_oracle_licensing.vbs  (Windows Script Host)
 #
 # POURQUOI CE TEST EXISTE
 #
 # Windows n'a ni awk ni shell POSIX : la logique de conformite y est
-# necessairement reimplementee. Deux implementations de la meme regle
-# divergent toujours a terme, et une divergence ici signifie qu'un
-# serveur Windows et un serveur Linux rendraient des verdicts differents
-# sur des donnees identiques -- exactement ce qui ruine la credibilite
-# d'un controle de licence.
+# necessairement reimplementee. Trois implementations de la meme regle
+# divergent toujours a terme, et une divergence ici signifie que deux
+# serveurs rendraient des verdicts differents sur des donnees
+# identiques -- exactement ce qui ruine la credibilite d'un controle de
+# licence.
+#
+# La variante VBScript existe parce que Windows Server 2003 n'embarque
+# aucun PowerShell, et parce que cscript s'execute la ou les strategies
+# de groupe interdisent "-ExecutionPolicy Bypass".
 #
 # Ce test compare, sur les memes caches de reference, le code retour et
 # la ligne de statut des deux moteurs.
@@ -29,9 +35,28 @@ readonly AWKF=$ROOT/lib/licensing_eval.awk
 WORK=$(mktemp -d); readonly WORK
 trap 'rm -rf "$WORK"' EXIT
 
+readonly VBS_CHECK=$ROOT/windows/check_oracle_licensing.vbs
+
 PWSH=${PWSH:-$(command -v pwsh 2>/dev/null)}
-if [[ -z ${PWSH:-} || ! -x ${PWSH:-} ]]; then
-    echo "### Parite Unix/Windows ignoree (pwsh absent)"
+HAVE_PS=0
+[[ -n ${PWSH:-} && -x ${PWSH:-} ]] && HAVE_PS=1
+
+# cscript via wine : permet d'executer reellement le moteur VBScript
+# hors de Windows. Wine n'implemente pas tout Windows Script Host, mais
+# le moteur a ete ecrit pour ne dependre que du sous-ensemble commun.
+WINE=${WINE:-$(command -v wine64 2>/dev/null || command -v wine 2>/dev/null)}
+[[ -z ${WINE:-} && -x /usr/lib/wine/wine64 ]] && WINE=/usr/lib/wine/wine64
+HAVE_VBS=0
+if [[ -n ${WINE:-} && -x ${WINE:-} ]]; then
+    export WINEDEBUG=${WINEDEBUG:--all}
+    export WINEPREFIX=${WINEPREFIX:-$WORK/wineprefix}
+    # wine exige un HOME accessible en ecriture pour son prefixe.
+    export HOME=${HOME:-/root}
+    HAVE_VBS=1
+fi
+
+if [[ $HAVE_PS -eq 0 && $HAVE_VBS -eq 0 ]]; then
+    echo "### Parite entre moteurs ignoree (ni pwsh ni wine)"
     exit 0
 fi
 
@@ -55,50 +80,74 @@ normalise() {
 
 compare() {
     local label=$1 sid=$2; shift 2
-    local sh_out sh_rc ps_out ps_rc
+    local sh_out sh_rc ps_out ps_rc vbs_out vbs_rc diverged=0
 
     sh_out=$("$SH_CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
              --config /dev/null -s "$sid" "$@" 2>&1 | head -1 | normalise)
-    sh_rc=${PIPESTATUS[0]}
     sh_rc=$("$SH_CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
              --config /dev/null -s "$sid" "$@" >/dev/null 2>&1; echo $?)
 
-    # Traduction des options longues Unix vers les parametres PowerShell.
-    local -a psargs=()
+    # Traduction des options longues Unix vers chaque syntaxe cible.
+    local -a psargs=() vbsargs=()
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -m|--mode)              psargs+=(-Mode "$2"); shift 2 ;;
-            -w|--warning)           psargs+=(-WarnThreshold "$2"); shift 2 ;;
-            -c|--critical)          psargs+=(-CritThreshold "$2"); shift 2 ;;
-            --licensed-options)     psargs+=(-LicensedOptions "$2"); shift 2 ;;
-            --licensed-processors)  psargs+=(-LicensedProcessors "$2"); shift 2 ;;
-            --ignore-historical)    psargs+=(-IgnoreHistorical); shift ;;
-            -v|--verbose)           psargs+=(-Detail); shift ;;
+            -m|--mode)              psargs+=(-Mode "$2");               vbsargs+=("/Mode:$2"); shift 2 ;;
+            -w|--warning)           psargs+=(-WarnThreshold "$2");      vbsargs+=("/Warning:$2"); shift 2 ;;
+            -c|--critical)          psargs+=(-CritThreshold "$2");      vbsargs+=("/Critical:$2"); shift 2 ;;
+            --licensed-options)     psargs+=(-LicensedOptions "$2");    vbsargs+=("/LicensedOptions:$2"); shift 2 ;;
+            --licensed-processors)  psargs+=(-LicensedProcessors "$2"); vbsargs+=("/LicensedProcessors:$2"); shift 2 ;;
+            --ignore-historical)    psargs+=(-IgnoreHistorical);        vbsargs+=("/IgnoreHistorical"); shift ;;
+            -v|--verbose)           psargs+=(-Detail);                  vbsargs+=("/Detail"); shift ;;
             *)                      shift ;;
         esac
     done
 
-    ps_out=$("$PWSH" -NoProfile -File "$PS_CHECK" -Sid "$sid" \
-             -CacheDir "$WORK" -MapFile "$MAP" -ConfigFile /dev/null \
-             "${psargs[@]}" 2>&1 | head -1 | normalise)
-    ps_rc=$("$PWSH" -NoProfile -File "$PS_CHECK" -Sid "$sid" \
-             -CacheDir "$WORK" -MapFile "$MAP" -ConfigFile /dev/null \
-             "${psargs[@]}" >/dev/null 2>&1; echo $?)
+    if [[ $HAVE_PS -eq 1 ]]; then
+        ps_out=$("$PWSH" -NoProfile -File "$PS_CHECK" -Sid "$sid" \
+                 -CacheDir "$WORK" -MapFile "$MAP" -ConfigFile /dev/null \
+                 "${psargs[@]}" 2>&1 | head -1 | normalise)
+        ps_rc=$("$PWSH" -NoProfile -File "$PS_CHECK" -Sid "$sid" \
+                 -CacheDir "$WORK" -MapFile "$MAP" -ConfigFile /dev/null \
+                 "${psargs[@]}" >/dev/null 2>&1; echo $?)
+        if [[ $sh_rc != "$ps_rc" || $sh_out != "$ps_out" ]]; then
+            diverged=1
+            printf '  FAIL %-52s\n' "$label"
+            [[ $sh_rc != "$ps_rc" ]] && printf '       rc     awk=%s ps=%s\n' "$sh_rc" "$ps_rc"
+            [[ $sh_out != "$ps_out" ]] && {
+                printf '       awk        : %s\n' "$sh_out"
+                printf '       powershell : %s\n' "$ps_out"; }
+        fi
+    fi
 
-    if [[ $sh_rc == "$ps_rc" && $sh_out == "$ps_out" ]]; then
+    if [[ $HAVE_VBS -eq 1 ]]; then
+        # cscript n'accepte que des chemins Windows : Z: est monte sur /.
+        vbs_out=$("$WINE" cscript //NoLogo "Z:$VBS_CHECK" "/Sid:$sid" \
+                  "/CacheDir:Z:$WORK" "/MapFile:Z:$MAP" "/ConfigFile:Z:/dev/null" \
+                  "${vbsargs[@]}" 2>/dev/null | head -1 | tr -d '\r' | normalise)
+        vbs_rc=$("$WINE" cscript //NoLogo "Z:$VBS_CHECK" "/Sid:$sid" \
+                  "/CacheDir:Z:$WORK" "/MapFile:Z:$MAP" "/ConfigFile:Z:/dev/null" \
+                  "${vbsargs[@]}" >/dev/null 2>&1; echo $?)
+        if [[ $sh_rc != "$vbs_rc" || $sh_out != "$vbs_out" ]]; then
+            [[ $diverged -eq 0 ]] && printf '  FAIL %-52s\n' "$label"
+            diverged=1
+            [[ $sh_rc != "$vbs_rc" ]] && printf '       rc     awk=%s vbs=%s\n' "$sh_rc" "$vbs_rc"
+            [[ $sh_out != "$vbs_out" ]] && {
+                printf '       awk        : %s\n' "$sh_out"
+                printf '       vbscript   : %s\n' "$vbs_out"; }
+        fi
+    fi
+
+    if [[ $diverged -eq 0 ]]; then
         printf '  ok   %-52s (rc=%s)\n' "$label" "$sh_rc"; PASS=$(( PASS + 1 ))
     else
-        printf '  FAIL %-52s\n' "$label"
-        [[ $sh_rc != "$ps_rc" ]] && printf '       rc  unix=%s windows=%s\n' "$sh_rc" "$ps_rc"
-        if [[ $sh_out != "$ps_out" ]]; then
-            printf '       unix    : %s\n' "$sh_out"
-            printf '       windows : %s\n' "$ps_out"
-        fi
         FAIL=$(( FAIL + 1 ))
     fi
 }
 
-echo "### Parite Unix/Windows ($("$PWSH" --version))"
+engines="awk"
+[[ $HAVE_PS  -eq 1 ]] && engines="$engines + $("$PWSH" --version)"
+[[ $HAVE_VBS -eq 1 ]] && engines="$engines + VBScript (cscript via wine)"
+echo "### Parite entre moteurs : $engines"
 
 for fx in ORCL SE2DB DB9I DB10G DOWNDB; do
     mkcache "$fx" 300

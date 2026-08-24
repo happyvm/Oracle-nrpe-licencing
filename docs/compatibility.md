@@ -35,28 +35,76 @@ du tout.
 dans Centreon pour les bases 9i — il resterait UNKNOWN en permanence.
 Déclarez `inventory`, `sessions` et `processors`.
 
-### 2. Windows Server 2003 n'embarque aucun PowerShell
+### 2. Windows Server 2003 : couvert par VBScript, et par lui seul
 
-Windows Server 2003 est livré sans PowerShell, et est en fin de support
-depuis **juillet 2015**. PowerShell 2.0 y est installable manuellement
-(via WMF 2.0 sur 2003 SP2), et le code de ce dépôt le vise explicitement.
+Windows Server 2003 est livré sans PowerShell. Plutôt que d'imposer
+l'installation de WMF 2.0 sur un parc existant, le dépôt fournit une
+implémentation **Windows Script Host (VBScript)** :
 
-Sans cette installation préalable, rien ne fonctionne sur 2003. Il n'y a
-pas de solution de contournement raisonnable : réécrire les scripts en
-VBScript ou en batch pour couvrir une plateforme hors support depuis dix
-ans coûterait plus cher que d'installer WMF 2.0.
+- `windows/check_oracle_licensing.vbs`
+- `windows/oracle_licensing_collector.vbs`
+- `windows/install.cmd` (installateur batch, sans PowerShell)
+- `windows/nsclient-oracle-licensing-vbs.ini`
 
-### 3. Le moteur Windows est une seconde implémentation
+**PowerShell reste la voie principale.** VBScript ne sert que là où
+PowerShell manque : Windows Server 2003, Windows Server 2008 resté en
+PowerShell 1.0, et les serveurs où une stratégie de groupe interdit
+l'exécution de scripts PowerShell.
 
-Windows n'a ni awk ni shell POSIX. La logique de conformité y est donc
-réimplémentée en PowerShell. Deux implémentations d'une même règle
-divergent toujours à terme.
+Ce n'est pas qu'une consigne de documentation : `install.cmd` **détecte
+PowerShell et refuse de s'exécuter** s'il en trouve une version 2.0 ou
+supérieure, en renvoyant vers `install.ps1`. Microsoft a annoncé en 2023
+la dépréciation de VBScript — livré jusqu'à Server 2025, puis
+fonctionnalité à la demande — et lier un serveur moderne à un langage en
+fin de vie serait une dette gratuite. `/Force` outrepasse le garde-fou
+pour le cas des GPO restrictives.
+
+Les deux variantes ont chacune leur fichier NSClient++, sans bloc
+commenté à basculer : on copie celui qui correspond au serveur, et
+jamais les deux, les noms de commandes étant identiques.
+
+Windows Server 2003 reste hors support Microsoft depuis juillet 2015 :
+ce dépôt le rend supervisable, il ne le rend pas sûr.
+
+### 3. Trois moteurs implémentent la même logique
+
+Windows n'a ni awk ni shell POSIX. La logique de conformité existe donc
+en trois exemplaires :
+
+| Moteur | Fichier | Cible |
+|---|---|---|
+| awk | `lib/licensing_eval.awk` | RHEL 5 → 9 |
+| PowerShell | `windows/check_oracle_licensing.ps1` | Windows 2008 R2 → 2025 (voie principale) |
+| VBScript | `windows/check_oracle_licensing.vbs` | uniquement les Windows sans PowerShell utilisable |
+
+Trois implémentations d'une même règle divergent toujours à terme, et
+une divergence signifierait que deux serveurs rendent des verdicts
+différents sur des données identiques — ce qui ruine la crédibilité d'un
+contrôle de licence.
 
 La parade est `tests/run_parity_tests.sh` : 26 cas comparent le code
-retour et la ligne de statut des deux moteurs sur des caches identiques.
-**Toute modification de la logique doit passer ce test.**
+retour et la ligne de statut des **trois** moteurs sur des caches
+identiques. **Toute modification de la logique doit passer ce test.**
+
+Le test a été validé par injection : une divergence volontaire introduite
+dans le moteur VBScript est bien détectée et rapportée.
 
 ---
+
+## Windows sans PowerShell : options examinées
+
+| Option | Verdict |
+|---|---|
+| **VBScript / Windows Script Host** | **retenu pour les seuls serveurs sans PowerShell** — natif de Windows 2000 à Server 2025, aucune installation, aucun binaire à faire approuver, pas d'`ExecutionPolicy` à contourner ; déprécié depuis 2023, donc cantonné aux machines qui n'ont pas le choix |
+| Batch pur (`.cmd`) | écarté — incapable de porter le matching par expression régulière et l'agrégation par option |
+| awk embarqué (busybox-w32, gawk GnuWin32) | écarté — réutiliserait le moteur Linux *à l'identique*, donc zéro duplication, mais impose de faire approuver un binaire tiers (antivirus, liste blanche applicative), souvent bloquant en entreprise |
+| Binaire compilé (Go) | écarté — Go ne cible plus Windows 2003 depuis la version 1.11 (Vista minimum) |
+| JScript (WSH) | écarté — équivalent techniquement à VBScript, mais moins courant en exploitation Windows |
+
+L'option awk embarqué reste la plus séduisante sur le plan technique :
+elle supprimerait la duplication de logique et donc le besoin même du
+test de parité. Elle redevient pertinente si votre politique interne
+autorise la distribution d'un exécutable tiers signé.
 
 ## Systèmes d'exploitation
 
@@ -92,14 +140,19 @@ WARNING plutôt que d'affirmer un chiffre faux.
 
 ### Windows Server
 
-| Version | PowerShell natif | Statut |
+| Version | PowerShell natif | Variante déployée |
 |---|---|---|
-| 2003 / 2003 R2 | **aucun** | WMF 2.0 à installer au préalable ; hors support Microsoft depuis 2015 |
-| 2008 | 1.0 | mettre à jour vers PowerShell 2.0 (WMF 2.0) |
-| 2008 R2 | 2.0 | supporté |
-| 2012 / 2012 R2 | 3.0 / 4.0 | supporté |
-| 2016 | 5.1 | supporté |
-| 2019 / 2022 / 2025 | 5.1 | supporté |
+| 2003 / 2003 R2 | aucun | **VBScript** (seule option) ; hors support Microsoft depuis 2015 |
+| 2008 | 1.0 | **VBScript**, ou PowerShell après installation de WMF 2.0 |
+| 2008 R2 | 2.0 | **PowerShell** |
+| 2012 / 2012 R2 | 3.0 / 4.0 | **PowerShell** |
+| 2016 | 5.1 | **PowerShell** |
+| 2019 / 2022 / 2025 | 5.1 | **PowerShell** |
+
+VBScript reste utilisable partout, mais `install.cmd` s'y oppose dès que
+PowerShell 2.0+ est présent. La seule exception prévue est une stratégie
+de groupe interdisant PowerShell, auquel cas `/Force` débloque
+l'installation.
 
 Le code Windows vise **PowerShell 2.0** et évite donc :
 `[pscustomobject]`, `[ordered]`, `Get-CimInstance`, l'opérateur `-in`,
@@ -179,7 +232,8 @@ Enterprise Edition vers une plateforme Standard.
 | Suites Unix | 76 tests, rejoués sous chacun des trois shells |
 | Analyse statique | `shellcheck -S warning`, sans avertissement |
 | Moteur PowerShell | exécuté sous **PowerShell 7.4** |
-| Parité Unix/Windows | 26 cas comparés, codes retour et ligne de statut |
+| Moteur VBScript | exécuté sous **cscript** (wine), les cinq modes |
+| Parité des trois moteurs | 26 cas comparés, codes retour et ligne de statut, détection de divergence vérifiée par injection |
 
 **Ce qui n'a pas pu être vérifié par exécution**, et doit l'être en
 recette avant déploiement :
@@ -190,6 +244,15 @@ recette avant déploiement :
 - Le comportement réel sous **PowerShell 2.0** : seule la 7.4 était
   disponible. Le code évite les constructions postérieures à la 2.0,
   mais cela reste une revue, pas un test.
+- Le chemin **WMI et registre** du collecteur VBScript
+  (`Win32_Processor`, `StdRegProv`, `Win32_Service`) : wine exécute le
+  langage, pas ces fournisseurs. Le moteur d'évaluation VBScript, lui,
+  est bien exécuté de bout en bout.
+- Le comportement sous le **WSH réel** de Windows : wine n'implémente
+  qu'un sous-ensemble. Le code a été écrit pour ne dépendre que du
+  sous-ensemble commun — `Join` et `DateDiff` sont volontairement évités
+  au profit de constructions équivalentes — ce qui élargit la couverture
+  du test plutôt que de la restreindre.
 - Le **SQL** contre de vraies instances 9i, 10g, 11g, 12c et 19c :
   aucune base Oracle n'était disponible. La logique de dégradation par
   version est écrite et relue, non exécutée.

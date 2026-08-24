@@ -51,8 +51,9 @@ for sh in $shells; do
     echo
 done
 
-# Parite Unix/Windows : la logique etant reimplementee en PowerShell,
-# rien n'empeche les deux moteurs de diverger sans ce controle.
+# Parite entre moteurs : la logique etant reimplementee en PowerShell et
+# en VBScript, rien n'empeche les trois de diverger sans ce controle.
+# Definir PWSH et/ou WINE pour exercer les moteurs Windows.
 "$ROOT/tests/run_parity_tests.sh" || rc=1
 
 echo

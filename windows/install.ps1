@@ -3,10 +3,17 @@
     Installe le collecteur et le plugin de licences Oracle sur Windows.
 
 .DESCRIPTION
+    Voie d'installation principale, pour Windows Server 2008 R2 et
+    au-dela (PowerShell 2.0 ou superieur).
+
     A executer dans une console PowerShell elevee.
 
     Depose les scripts, la table de correspondance et le SQL, cree le
     repertoire de cache, et enregistre une tache planifiee quotidienne.
+
+    Les serveurs SANS PowerShell utilisable -- Windows Server 2003, ou
+    2008 reste en PowerShell 1.0 -- passent par windows\install.cmd, qui
+    deploie la variante VBScript.
 #>
 param(
     [string] $InstallDir = 'C:\Program Files\oracle-licensing',
@@ -72,6 +79,7 @@ Etapes suivantes :
      & '$InstallDir\oracle_licensing_collector.ps1' -Trace
   4. Verifiez le rendu :
      & '$InstallDir\check_oracle_licensing.ps1' -Sid <SID> -Mode inventory -Detail
-  5. Fusionnez windows\nsclient-oracle-licensing.ini dans nsclient.ini,
-     puis redemarrez NSClient++.
+  5. Fusionnez windows\nsclient-oracle-licensing.ini dans nsclient.ini
+     (la version PowerShell, PAS le fichier -vbs), puis redemarrez
+     NSClient++.
 "@

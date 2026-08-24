@@ -63,18 +63,39 @@ sudo -u oracle /usr/local/bin/oracle_licensing_collector.sh -v
 systemctl reload nrpe
 ```
 
-### Windows
+### Windows (voie principale, PowerShell)
 
-Dans une console PowerShell élevée :
+Dans une console PowerShell **élevée** :
 
 ```powershell
 .\windows\install.ps1
 ```
 
-Puis renseigner `C:\ProgramData\oracle-licensing\oracle-licensing.conf`
-(même fichier et même syntaxe que sous Unix), fusionner
-`windows\nsclient-oracle-licensing.ini` dans `nsclient.ini`, et
-redémarrer NSClient++.
+Puis fusionner `windows\nsclient-oracle-licensing.ini` dans
+`nsclient.ini`.
+
+### Windows sans PowerShell (Server 2003, ou 2008 en PowerShell 1.0)
+
+Dans une invite de commandes **administrateur**, à la racine du dépôt :
+
+```bat
+windows\install.cmd
+```
+
+Batch et Windows Script Host uniquement, aucune dépendance à PowerShell.
+Le script **détecte PowerShell et s'arrête** s'il en trouve une version
+2.0 ou supérieure, en renvoyant vers `install.ps1` : VBScript étant
+déprécié, il ne doit être déployé que là où il est indispensable.
+`/Force` outrepasse ce garde-fou, pour le cas où une GPO interdit
+l'exécution de scripts PowerShell.
+
+Puis fusionner `windows\nsclient-oracle-licensing-vbs.ini` dans
+`nsclient.ini` — jamais les deux fichiers à la fois, les noms de
+commandes sont identiques.
+
+Dans les deux cas, renseigner ensuite
+`C:\ProgramData\oracle-licensing\oracle-licensing.conf` (même fichier
+et même syntaxe que sous Unix) et redémarrer NSClient++.
 
 Le compte exécutant la tâche planifiée doit appartenir au groupe local
 **ORA_DBA**, sans quoi la connexion `/ as sysdba` échoue.
@@ -146,9 +167,15 @@ User Manual*.
 ```bash
 ./tests/run_all.sh
 
-# Pour couvrir aussi bash 3.2 (RHEL 5) et le moteur Windows :
-BASH32=/chemin/vers/bash-3.2 PWSH=$(command -v pwsh) ./tests/run_all.sh
+# Pour couvrir aussi bash 3.2 (RHEL 5) et les deux moteurs Windows :
+BASH32=/chemin/vers/bash-3.2 \
+PWSH=$(command -v pwsh) \
+WINE=$(command -v wine64) \
+  ./tests/run_all.sh
 ```
+
+Le moteur VBScript est exercé via `cscript` sous wine, ce qui permet de
+le tester sans machine Windows.
 
 **Sans aucune base Oracle**, ni machine Windows :
 
@@ -156,7 +183,7 @@ BASH32=/chemin/vers/bash-3.2 PWSH=$(command -v pwsh) ./tests/run_all.sh
 |---|---|
 | `run_tests.sh` (53) | les cinq modes, les seuils, l'absence de faux positifs, les cas limites — édition incompatible, instance arrêtée, cache périmé, Oracle 9i et 10g |
 | `run_collector_tests.sh` (23) | découverte via `oratab`, nommage des caches, écriture atomique, filtres `--sid`/`EXCLUDE_SIDS`, `--dry-run`, instance arrêtée |
-| `run_parity_tests.sh` (26) | verdicts identiques entre le moteur awk et le moteur PowerShell |
+| `run_parity_tests.sh` (26) | verdicts identiques entre les trois moteurs : awk, VBScript et PowerShell |
 
 Les deux premières suites sont rejouées **sous chaque shell disponible**
 (`dash`, `bash 3.2`, `bash 5.x`), et le moteur awk est vérifié sous
@@ -168,10 +195,10 @@ collecteur avec un `sqlplus` et un `oratab` simulés. C'est le bénéfice
 direct de l'architecture en deux étages : la logique de conformité est
 vérifiable hors production.
 
-Trois éléments **n'ont pas pu être vérifiés par exécution** et sont à
-couvrir en recette : le chemin WMI du collecteur Windows, le
-comportement réel sous PowerShell 2.0, et le SQL contre de vraies
-instances 9i à 19c. Le détail est dans
+Quelques éléments **n'ont pas pu être vérifiés par exécution** et sont à
+couvrir en recette : les accès WMI et registre des collecteurs Windows,
+le comportement sous PowerShell 2.0 et sous le WSH réel de Windows, et
+le SQL contre de vraies instances 9i à 19c. Le détail est dans
 [docs/compatibility.md](docs/compatibility.md).
 
 ## Sécurité
@@ -192,8 +219,8 @@ Périmètre couvert : **Windows Server 2003 → 2025**, **RHEL 5 → 9**,
 | Plateforme | Statut |
 |---|---|
 | RHEL 5 → 9 | supporté (shell POSIX + awk ; replis pour `lscpu`, `timeout`, `systemd`) |
-| Windows Server 2008 R2 → 2025 | supporté (PowerShell 2.0+, NSClient++) |
-| Windows Server 2003 | nécessite l'installation préalable de WMF 2.0 ; hors support Microsoft depuis 2015 |
+| Windows Server 2008 R2 → 2025 | supporté via **PowerShell 2.0+** (voie principale) |
+| Windows Server 2003, et 2008 en PowerShell 1.0 | supporté via **VBScript / Windows Script Host**, uniquement là où PowerShell manque |
 | Oracle 10.1 → 19c | supporté |
 | Oracle 9i | **dégradé** — voir ci-dessous |
 
@@ -204,10 +231,13 @@ Périmètre couvert : **Windows Server 2003 → 2025**, **RHEL 5 → 9**,
    n'enregistre nulle part quelles options ont servi. Le mode `options`
    renvoie donc UNKNOWN plutôt qu'un OK trompeur. Sur ces bases,
    déclarez `inventory`, `sessions` et `processors`, pas `options`.
-2. **Windows Server 2003 n'embarque aucun PowerShell.** WMF 2.0 doit y
-   être installé au préalable.
-3. **Le moteur Windows est une seconde implémentation** de la même
-   logique. `tests/run_parity_tests.sh` compare les deux sur des données
+2. **VBScript n'est déployé que là où PowerShell manque.** Le langage
+   est déprécié depuis 2023 (livré jusqu'à Server 2025, puis
+   fonctionnalité à la demande) : l'installateur batch refuse de
+   s'exécuter s'il détecte PowerShell 2.0 ou supérieur, pour ne pas lier
+   un serveur moderne à un langage en fin de vie.
+3. **Trois moteurs implémentent la même logique** (awk, VBScript,
+   PowerShell). `tests/run_parity_tests.sh` les compare sur des données
    identiques ; toute modification de la logique doit le faire passer.
 
 **Pourquoi le moteur est en awk plutôt qu'en bash.** Les tableaux
