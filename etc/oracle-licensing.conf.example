@@ -19,6 +19,7 @@
 CACHE_DIR=/var/cache/oracle-licensing
 SQL_FILE=/usr/lib/oracle-licensing/collect_licensing.sql
 MAP_FILE=/etc/oracle-licensing/licensable-features.map
+EVIDENCE_FILE=/etc/oracle-licensing/structural-evidence.map
 AWK_FILE=/usr/lib/oracle-licensing/licensing_eval.awk
 ORATAB=/etc/oratab
 
@@ -76,6 +77,14 @@ LICENSED_OPTIONS="Partitioning,Diagnostics Pack,Tuning Pack"
 
 # Nombre de licences Processor detenues pour cet hote.
 LICENSED_PROCESSORS=""
+
+# Nombre de PDB utilisateur incluses sans licence Multitenant.
+#
+# Laisser vide pour appliquer la regle par version : une seule PDB de
+# 12.1 a 18c, trois a partir de 19c. Cette limite a deja evolue et peut
+# encore le faire : verifiez-la dans le Licensing Information User
+# Manual de votre version exacte, et fixez-la ici si elle differe.
+MULTITENANT_INCLUDED_PDBS=""
 
 # --- Controle --------------------------------------------------------
 # Age maximal du cache avant alerte, en secondes. 93600 s = 26 h : laisse

@@ -32,6 +32,7 @@ readonly SH_CHECK=$ROOT/bin/check_oracle_licensing.sh
 readonly PS_CHECK=$ROOT/windows/check_oracle_licensing.ps1
 readonly MAP=$ROOT/etc/licensable-features.map
 readonly AWKF=$ROOT/lib/licensing_eval.awk
+readonly EVID=$ROOT/etc/structural-evidence.map
 WORK=$(mktemp -d); readonly WORK
 trap 'rm -rf "$WORK"' EXIT
 
@@ -82,9 +83,9 @@ compare() {
     local label=$1 sid=$2; shift 2
     local sh_out sh_rc ps_out ps_rc vbs_out vbs_rc diverged=0
 
-    sh_out=$("$SH_CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
+    sh_out=$("$SH_CHECK" --cache-dir "$WORK" --map "$MAP" --evidence "$EVID" --awk "$AWKF" \
              --config /dev/null -s "$sid" "$@" 2>&1 | head -1 | normalise)
-    sh_rc=$("$SH_CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
+    sh_rc=$("$SH_CHECK" --cache-dir "$WORK" --map "$MAP" --evidence "$EVID" --awk "$AWKF" \
              --config /dev/null -s "$sid" "$@" >/dev/null 2>&1; echo $?)
 
     # Traduction des options longues Unix vers chaque syntaxe cible.
@@ -104,10 +105,10 @@ compare() {
 
     if [[ $HAVE_PS -eq 1 ]]; then
         ps_out=$("$PWSH" -NoProfile -File "$PS_CHECK" -Sid "$sid" \
-                 -CacheDir "$WORK" -MapFile "$MAP" -ConfigFile /dev/null \
+                 -CacheDir "$WORK" -MapFile "$MAP" -EvidenceFile "$EVID" -ConfigFile /dev/null \
                  "${psargs[@]}" 2>&1 | head -1 | normalise)
         ps_rc=$("$PWSH" -NoProfile -File "$PS_CHECK" -Sid "$sid" \
-                 -CacheDir "$WORK" -MapFile "$MAP" -ConfigFile /dev/null \
+                 -CacheDir "$WORK" -MapFile "$MAP" -EvidenceFile "$EVID" -ConfigFile /dev/null \
                  "${psargs[@]}" >/dev/null 2>&1; echo $?)
         if [[ $sh_rc != "$ps_rc" || $sh_out != "$ps_out" ]]; then
             diverged=1
@@ -122,10 +123,10 @@ compare() {
     if [[ $HAVE_VBS -eq 1 ]]; then
         # cscript n'accepte que des chemins Windows : Z: est monte sur /.
         vbs_out=$("$WINE" cscript //NoLogo "Z:$VBS_CHECK" "/Sid:$sid" \
-                  "/CacheDir:Z:$WORK" "/MapFile:Z:$MAP" "/ConfigFile:Z:/dev/null" \
+                  "/CacheDir:Z:$WORK" "/MapFile:Z:$MAP" "/EvidenceFile:Z:$EVID" "/ConfigFile:Z:/dev/null" \
                   "${vbsargs[@]}" 2>/dev/null | head -1 | tr -d '\r' | normalise)
         vbs_rc=$("$WINE" cscript //NoLogo "Z:$VBS_CHECK" "/Sid:$sid" \
-                  "/CacheDir:Z:$WORK" "/MapFile:Z:$MAP" "/ConfigFile:Z:/dev/null" \
+                  "/CacheDir:Z:$WORK" "/MapFile:Z:$MAP" "/EvidenceFile:Z:$EVID" "/ConfigFile:Z:/dev/null" \
                   "${vbsargs[@]}" >/dev/null 2>&1; echo $?)
         if [[ $sh_rc != "$vbs_rc" || $sh_out != "$vbs_out" ]]; then
             [[ $diverged -eq 0 ]] && printf '  FAIL %-52s\n' "$label"
@@ -149,7 +150,7 @@ engines="awk"
 [[ $HAVE_VBS -eq 1 ]] && engines="$engines + VBScript (cscript via wine)"
 echo "### Parite entre moteurs : $engines"
 
-for fx in ORCL SE2DB DB9I DB10G DOWNDB; do
+for fx in ORCL SE2DB DB9I DB10G DB11G DB12C DOWNDB; do
     mkcache "$fx" 300
 done
 
@@ -159,9 +160,16 @@ compare "ORCL declaration partielle"   ORCL  -m options --licensed-options "Part
 compare "ORCL declaration complete"    ORCL  -m options --licensed-options "Partitioning,Diagnostics Pack,Multitenant,Advanced Compression,Tuning Pack"
 compare "ORCL historique ignore"       ORCL  -m options --ignore-historical --licensed-options "Partitioning,Diagnostics Pack,Multitenant,Advanced Compression"
 compare "SE2DB edition incompatible"   SE2DB -m options --licensed-options "Partitioning,Diagnostics Pack"
-compare "DB9I usage indisponible"      DB9I  -m options
+compare "DB9I preuves structurelles"   DB9I  -m options
+compare "DB9I preuves declarees"      DB9I  -m options --licensed-options "Partitioning,Spatial and Graph"
 compare "DB10G Spatial encore payant"  DB10G -m options --licensed-options "Partitioning"
 compare "DB10G Spatial declare"        DB10G -m options --licensed-options "Partitioning,Spatial and Graph"
+compare "DB11G exposition packs"       DB11G -m options --licensed-options "Partitioning,Advanced Compression"
+compare "DB11G packs declares"         DB11G -m options --licensed-options "Partitioning,Advanced Compression,Diagnostics Pack,Tuning Pack"
+compare "DB11G usage avere"            DB11G -m options
+compare "DB12C Multitenant 2 PDB"      DB12C -m options --licensed-options "Partitioning"
+compare "DB12C tout declare"           DB12C -m options --licensed-options "Partitioning,Database In-Memory,Advanced Security,Advanced Compression,Multitenant"
+compare "ORCL 19c 3 PDB incluses"      ORCL  -m options --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
 compare "DOWNDB sans feature"          DOWNDB -m options
 
 echo "== Mode processors =="

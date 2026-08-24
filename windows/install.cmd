@@ -116,6 +116,7 @@ copy /Y "%SRC%\sql\collect_licensing.sql"              "%INSTALL_DIR%\" >nul
 
 echo == Donnees de reference
 copy /Y "%SRC%\etc\licensable-features.map" "%DATA_DIR%\" >nul
+copy /Y "%SRC%\etc\structural-evidence.map" "%DATA_DIR%\" >nul
 
 rem La configuration porte la declaration contractuelle : on ne l'ecrase
 rem jamais lors d'une mise a jour.

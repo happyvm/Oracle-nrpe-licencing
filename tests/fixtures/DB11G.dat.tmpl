@@ -1,0 +1,64 @@
+# Oracle 11.2 : cas typique d'un serveur reste en configuration d'usine.
+#
+# CONTROL_MANAGEMENT_PACK_ACCESS vaut DIAGNOSTIC+TUNING, sa valeur par
+# defaut en Enterprise Edition : les management packs sont accessibles
+# alors qu'aucun usage n'est encore constate. C'est une exposition, pas
+# une infraction -- et c'est le premier point qu'un auditeur regarde.
+#
+# La base utilise par ailleurs la compression OLTP et des LOB SecureFile
+# compresses, deux preuves structurelles d'Advanced Compression que
+# DBA_FEATURE_USAGE_STATISTICS ne remonte pas toujours.
+KV|collect.version|1.1.0
+KV|collect.epoch|@EPOCH@
+KV|collect.date|@DATE@
+KV|inst.sid|DB11G
+KV|inst.oracle_home|/u01/app/oracle/product/11.2.0/dbhome_1
+KV|inst.running|1
+KV|host.name|srvora-11g.example.lan
+KV|host.arch|x86_64
+KV|host.cpu.sockets|2
+KV|host.cpu.cores|16
+KV|host.cpu.threads|32
+KV|host.cpu.reliable|1
+KV|host.virt|none
+KV|host.core_factor|0.5
+KV|host.processor_licenses|8
+KV|inst.version|11.2.0.4.0
+KV|db.version_major|11
+KV|collect.cap.feature_usage|1
+KV|collect.cap.hwm|1
+KV|collect.cap.osstat_cores|1
+KV|collect.cap.multitenant|0
+KV|db.name|DB11G
+KV|db.dbid|223344556
+KV|db.role|PRIMARY
+KV|db.open_mode|READ WRITE
+KV|db.edition|EE
+KV|db.cdb|NO
+KV|db.pdb_count|0
+KV|db.rac_instances|1
+KV|param.cpu_count|32
+KV|param.control_management_pack_access|DIAGNOSTIC+TUNING
+KV|param.statistics_level|TYPICAL
+KV|license.sessions_current|85
+KV|license.sessions_highwater|640
+KV|license.sessions_max|0
+KV|collect.status|ok
+OPT|Partitioning|TRUE
+OPT|Real Application Clusters|FALSE
+OPT|Oracle Database Vault|FALSE
+FEAT|Partitioning (user)|TRUE|880|2026-08-19|2013-06-01|7
+FEAT|Oracle Java Virtual Machine (system)|TRUE|880|2026-08-19|2013-06-01|0
+FEAT|SecureFiles (user)|TRUE|300|2026-08-19|2015-02-11|0
+OBJ|part_tables|7
+OBJ|part_indexes|19
+OBJ|oltp_compressed_tables|12
+OBJ|hcc_compressed_tables|0
+OBJ|securefile_compressed|4
+OBJ|securefile_deduplicated|0
+OBJ|securefile_encrypted|0
+OBJ|flashback_archives|0
+OBJ|adg_readonly_apply|0
+OBJ|rac_instances|1
+OBJ|sdo_columns|0
+HWM|SESSIONS|640|85

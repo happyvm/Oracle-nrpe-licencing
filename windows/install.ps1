@@ -38,6 +38,7 @@ Copy-Item (Join-Path $root 'sql\collect_licensing.sql')     $InstallDir -Force
 
 Write-Output '== Donnees de reference'
 Copy-Item (Join-Path $root 'etc\licensable-features.map') $DataDir -Force
+Copy-Item (Join-Path $root 'etc\structural-evidence.map') $DataDir -Force
 
 # La configuration porte la declaration contractuelle : on ne l'ecrase
 # jamais lors d'une mise a jour.

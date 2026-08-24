@@ -19,10 +19,11 @@
 # des extensions gawk absentes de nawk et des mawk anciens.
 #
 # Appel :
-#   awk -v mode=... -v now=... [...] -f licensing_eval.awk MAP CACHE
+#   awk -v mode=... -v now=... [...] -f licensing_eval.awk MAP EVIDENCE CACHE
 #
-# Le premier fichier est la table de correspondance, le second le cache
-# de l'instance. Code retour : convention Nagios (0/1/2/3).
+# Dans l'ordre : la table de correspondance des features, la table des
+# preuves structurelles, puis le cache de l'instance.
+# Code retour : convention Nagios (0/1/2/3).
 # =====================================================================
 
 # ---------------------------------------------------------------------
@@ -92,12 +93,16 @@ BEGIN {
     FS = "|"
     OK = 0; WARNING = 1; CRITICAL = 2; UNKNOWN = 3
     nrules = 0
+    nev = 0
+    filenum = 0
 }
 
+FNR == 1 { filenum++ }
+
 # ---------------------------------------------------------------------
-# Premier fichier : la table de correspondance.
+# Premier fichier : correspondance features -> options payantes.
 # ---------------------------------------------------------------------
-FNR == NR {
+filenum == 1 {
     if ($0 ~ /^[ \t]*(#|$)/) next
     if (NF != 6) next                     # ligne malformee : ignoree
     nrules++
@@ -107,6 +112,22 @@ FNR == NR {
     r_aux[nrules]  = $4 + 0
     r_free[nrules] = $5
     r_note[nrules] = $6
+    next
+}
+
+# ---------------------------------------------------------------------
+# Second fichier : preuves structurelles.
+# ---------------------------------------------------------------------
+filenum == 2 {
+    if ($0 ~ /^[ \t]*(#|$)/) next
+    if (NF != 6) next
+    nev++
+    e_key[nev]  = $1
+    e_opt[nev]  = $2
+    e_eds[nev]  = $3
+    e_min[nev]  = $4 + 0
+    e_free[nev] = $5
+    e_note[nev] = $6
     next
 }
 
@@ -125,6 +146,7 @@ $1 == "FEAT" {
     next
 }
 $1 == "HWM"  { hwm[$2] = $3; next }
+$1 == "OBJ"  { objv[$2] = $3; next }
 
 # =====================================================================
 END {
@@ -168,24 +190,50 @@ END {
 #   WARNING   option non detenue dont l'usage est seulement historique
 #   OK        usage couvert, ou feature devenue gratuite dans la version
 # =====================================================================
+# Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
+#
+# Ce parametre (11.1 et suivants) commande l'acces aux management packs.
+# Sa valeur par defaut en Enterprise Edition est DIAGNOSTIC+TUNING : une
+# base neuve autorise donc leur usage, meme sans les avoir achetes.
+# Oracle recommande NONE dans ce cas.
+#
+# Une base exposee n'est pas une base en infraction : c'est une porte
+# ouverte, pas un usage constate. D'ou une categorie distincte, en
+# WARNING, qui laisse le CRITICAL aux usages averes.
+#
+# La correspondance est une regle du produit Oracle, pas une donnee
+# susceptible d'evoluer avec le contrat : elle reste dans le code.
+function packs_exposed(value, arr,    v, n) {
+    n = 0
+    v = toupper(value)
+    gsub(/[ \t]/, "", v)
+    if (v == "" || v == "NONE") return 0
+    if (v == "DIAGNOSTIC" || v == "DIAGNOSTIC+TUNING") { arr["Diagnostics Pack"] = 1; n++ }
+    if (v == "DIAGNOSTIC+TUNING")                      { arr["Tuning Pack"] = 1;      n++ }
+    return n
+}
+
+# Nombre de PDB utilisateur incluses sans licence Multitenant.
+#
+# Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
+# trois a partir de 19c. Un seuil fixe produirait un faux positif sur
+# 19c -- accuser a tort est pire qu'un faux negatif, car cela fait
+# ignorer les vraies alertes.
+#
+# Verifiez la valeur applicable dans le Licensing Information User
+# Manual de votre version exacte : elle a deja change, elle peut encore
+# changer. MULTITENANT_INCLUDED_PDBS permet de la fixer.
+function multitenant_included(    v) {
+    if (mt_included != "") return mt_included + 0
+    if (version_ge(version, "19")) return 3
+    return 1
+}
+
 function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
-                          status, label, parts, np, stale, o, grp, msg) {
+                          status, label, parts, np, stale, o, grp, msg,
+                          cnt, nstruct, partial, cmpa, n_exp, npdb) {
     if (nrules == 0) {
         printf "UNKNOWN - table de correspondance vide ou illisible\n"
-        return UNKNOWN
-    }
-
-    # Oracle 9i n'expose aucune source d'usage des options :
-    # DBA_FEATURE_USAGE_STATISTICS n'apparait qu'en 10.1. Conclure a la
-    # conformite serait un mensonge ; on le dit.
-    if (!cap_usage) {
-        printf "UNKNOWN - %s/%s (%s %s): controle d'usage impossible, ", \
-               db_name, sid, edition, version
-        printf "DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir d'Oracle 10.1"
-        printf "|unlicensed_now=U unlicensed_past=U cache_age=%ds;;%d;0\n", age, max_cache_age
-        printf "Sur cette version, seuls les modes inventory (options liees au binaire)\n"
-        printf "et sessions sont exploitables. Ne declarez pas ce service dans Centreon\n"
-        printf "pour les bases 9i : il resterait UNKNOWN en permanence.\n"
         return UNKNOWN
     }
 
@@ -233,18 +281,78 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
         else                         viol_past[opt] = 1
     }
 
+    # ------------------------------------------------------------------
+    # Preuves structurelles.
+    #
+    # Un objet qui existe atteste un usage COURANT : ces constats vont
+    # donc toujours en infraction courante, jamais en historique.
+    # C'est la seule source disponible sur Oracle 9i, et un recoupement
+    # utile ailleurs -- l'echantillonnage MMON peut manquer un usage,
+    # une table partitionnee ne se cache pas.
+    # ------------------------------------------------------------------
+    for (i = 1; i <= nev; i++) {
+        cnt = objv[e_key[i]]
+        if (cnt == "") continue           # preuve non collectee
+        cnt = cnt + 0
+        if (cnt <= e_min[i]) continue
+
+        opt = e_opt[i]
+        if (e_free[i] != "-" && version_ge(version, e_free[i])) { freed[opt] = 1; continue }
+
+        detail[opt] = detail[opt] sprintf("\n    - %s : %d objet(s) [preuve structurelle]%s", \
+                      e_key[i], cnt, (e_note[i] != "" ? " ; " e_note[i] : ""))
+        nstruct++
+
+        if (e_eds[i] != "ALL" && edition != "UNKNOWN" \
+            && index("," e_eds[i] ",", "," edition ",") == 0) {
+            wrong_edition[opt] = 1
+            continue
+        }
+        if (is_licensed(opt)) covered[opt] = 1
+        else                  viol_now[opt] = 1
+    }
+
     # Une option deja en infraction courante ne doit pas etre recomptee.
     for (o in viol_now)      delete viol_past[o]
     for (o in wrong_edition) { delete viol_now[o]; delete viol_past[o]; delete covered[o] }
+
+    # ------------------------------------------------------------------
+    # Multitenant : traite ici plutot que par la table des features,
+    # son seuil dependant de la version installee.
+    # ------------------------------------------------------------------
+    npdb = kv["db.pdb_count"] + 0
+    if (npdb > multitenant_included()) {
+        opt = "Multitenant"
+        detail[opt] = detail[opt] sprintf("\n    - %d PDB utilisateur, %d incluse(s) en Oracle %s [regle produit]", \
+                      npdb, multitenant_included(), version)
+        if (edition != "EE" && edition != "UNKNOWN") wrong_edition[opt] = 1
+        else if (is_licensed(opt))                   covered[opt] = 1
+        else                                         viol_now[opt] = 1
+    }
+
+    # ------------------------------------------------------------------
+    # Exposition aux management packs (11.1 et suivants).
+    #
+    # On ne signale que ce qui n'est pas deja constate : une option deja
+    # en infraction n'a pas besoin d'etre annoncee comme "exposee".
+    # ------------------------------------------------------------------
+    cmpa = kv["param.control_management_pack_access"]
+    if (packs_exposed(cmpa, exposed) > 0) {
+        for (o in exposed) {
+            if (is_licensed(o) || (o in viol_now) || (o in viol_past) || (o in wrong_edition))
+                delete exposed[o]
+        }
+    }
 
     n_now = count_keys(viol_now)
     n_past = (ignore_historical ? 0 : count_keys(viol_past))
     n_cov = count_keys(covered)
     n_edt = count_keys(wrong_edition)
+    n_exp = count_keys(exposed)
 
     status = OK; label = "OK"
-    if (n_edt > 0 || n_now > 0)  { status = CRITICAL; label = "CRITICAL" }
-    else if (n_past > 0)         { status = WARNING;  label = "WARNING"  }
+    if (n_edt > 0 || n_now > 0)      { status = CRITICAL; label = "CRITICAL" }
+    else if (n_past > 0 || n_exp > 0) { status = WARNING;  label = "WARNING"  }
 
     # Un cache perime rend le verdict caduc, sans masquer une infraction
     # deja constatee.
@@ -261,21 +369,42 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
         { msg = msg (np++ ? "; " : "") sprintf("%d option(s) non licenciee(s) en cours d'utilisation: %s", n_now, join_sorted(viol_now)) }
     if (n_past > 0)
         { msg = msg (np++ ? "; " : "") sprintf("%d option(s) non licenciee(s) avec usage historique: %s", n_past, join_sorted(viol_past)) }
+    if (n_exp > 0)
+        { msg = msg (np++ ? "; " : "") sprintf("%d pack(s) accessible(s) sans licence declaree (CONTROL_MANAGEMENT_PACK_ACCESS=%s): %s", n_exp, cmpa, join_sorted(exposed)) }
     if (np == 0)
         { msg = sprintf("aucune derive detectee sur %d option(s) declaree(s)", n_cov) }
 
-    printf "%s - %s/%s (%s %s): %s%s", label, db_name, sid, edition, version, msg, stale
-    printf "|unlicensed_now=%d;;1;0 unlicensed_past=%d;1;;0 wrong_edition=%d;;1;0 licensed_used=%d;;;0 cache_age=%ds;;%d;0\n", \
-           n_now, n_past, n_edt, n_cov, age, max_cache_age
+    # Sans DBA_FEATURE_USAGE_STATISTICS (avant Oracle 10.1), seules les
+    # preuves structurelles sont disponibles. Le verdict reste valable
+    # pour ce qu'il couvre, mais ne doit pas se faire passer pour complet.
+    partial = ""
+    if (!cap_usage)
+        partial = " [couverture partielle: analyse structurelle seule, releve d'usage absent avant Oracle 10.1]"
+
+    printf "%s - %s/%s (%s %s): %s%s%s", label, db_name, sid, edition, version, msg, stale, partial
+    printf "|unlicensed_now=%d;;1;0 unlicensed_past=%d;1;;0 wrong_edition=%d;;1;0 exposed_packs=%d;1;;0 licensed_used=%d;;;0 cache_age=%ds;;%d;0\n", \
+           n_now, n_past, n_edt, n_exp, n_cov, age, max_cache_age
 
     # Sortie longue : elle permet au DBA d'agir sans se reconnecter.
     if (verbose || status != OK) {
         if (n_edt > 0)  print_group("Options incompatibles avec l'edition installee :", wrong_edition)
         if (n_now > 0)  print_group("Options utilisees SANS licence declaree :", viol_now)
         if (n_past > 0) print_group("Options non licenciees, usage historique uniquement :", viol_past)
+        if (n_exp > 0) {
+            printf "Packs accessibles sans licence declaree (aucun usage constate a ce jour) :\n"
+            for (o in exposed) printf "  %s\n", o
+            printf "  CONTROL_MANAGEMENT_PACK_ACCESS=%s autorise leur usage a tout moment.\n", cmpa
+            printf "  Si ces packs ne sont pas detenus, positionnez le parametre a NONE.\n"
+        }
         if (verbose && n_cov > 0) print_group("Options couvertes par la declaration :", covered)
         if (verbose && count_keys(freed) > 0)
             printf "Features payantes par le passe, incluses en %s : %s\n", version, join_sorted(freed)
+        if (!cap_usage) {
+            printf "Oracle %s : DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir de 10.1.\n", version
+            printf "Ce verdict repose sur les seules preuves structurelles du dictionnaire.\n"
+            printf "Non couverts sur cette version : management packs Diagnostics et Tuning,\n"
+            printf "et les usages sans objet persistant (compression RMAN, Data Guard, Data Pump).\n"
+        }
     }
     return status
 }

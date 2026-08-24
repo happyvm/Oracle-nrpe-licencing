@@ -10,30 +10,41 @@ c'est délibérément la première chose énoncée.
 
 ## Les trois limites dures
 
-### 1. Oracle 9i : le contrôle d'usage des options est impossible
+### 1. Oracle 9i : contrôle partiel, par preuves structurelles
 
-`DBA_FEATURE_USAGE_STATISTICS` n'existe **qu'à partir d'Oracle 10.1**. En
-9i, la base n'enregistre nulle part quelles options ont été utilisées.
-Aucun outil, quel qu'il soit, ne peut reconstituer cette information a
-posteriori.
+`DBA_FEATURE_USAGE_STATISTICS` n'existe **qu'à partir d'Oracle 10.1**.
+Le relevé d'usage échantillonné par MMON n'est donc pas disponible.
 
-Ce que 9i permet encore :
+Mais le **dictionnaire de données, lui, existe depuis 8i**. L'usage des
+options *structurelles* s'y prouve directement, et de façon plus solide
+qu'un relevé : une table partitionnée existe ou n'existe pas, là où
+l'échantillonnage MMON peut manquer un usage survenu entre deux
+instantanés.
 
-| Contrôle | 9i | Pourquoi |
+| Contrôle | 9i | Source |
 |---|---|---|
-| Options liées au binaire (`V$OPTION`) | oui | présent depuis 8i |
-| Sessions, high-water mark (`V$LICENSE`) | oui | présent depuis 8i |
-| Licences Processor (inventaire OS) | oui | ne dépend pas de la base |
-| **Usage réel des options payantes** | **non** | vue inexistante |
+| Licences Processor | oui | inventaire OS, indépendant de la base |
+| Sessions, high-water mark | oui | `V$LICENSE`, depuis 8i |
+| Options liées au binaire | oui | `V$OPTION`, depuis 8i |
+| **Partitioning** | **oui** | `DBA_PART_TABLES`, `DBA_PART_INDEXES` |
+| **Spatial** | **oui** | colonnes `SDO_GEOMETRY` hors MDSYS |
+| **OLAP** | **oui** | espaces de travail analytiques |
+| **Label Security** | **oui** | `DBA_SA_POLICIES` |
+| **RAC** | **oui** | `GV$INSTANCE` > 1 |
+| Management packs Diagnostics / Tuning | non | passaient par EM Grid Control, rien en base |
+| Usages sans objet persistant | non | compression RMAN, Data Guard, Data Pump |
 
-Le mode `options` renvoie donc **UNKNOWN** sur 9i, avec un message
-explicite. C'est volontaire : afficher OK laisserait croire à une
-conformité qui n'a pas été vérifiée, ce qui est pire que pas de contrôle
-du tout.
+Le mode `options` rend donc un **verdict réel** sur 9i, assorti de la
+mention `[couverture partielle: analyse structurelle seule, relevé
+d'usage absent avant Oracle 10.1]`. La sortie longue rappelle ce qui
+n'est pas couvert.
 
-**Conséquence pratique :** ne déclarez pas le service `Oracle-Lic-Options`
-dans Centreon pour les bases 9i — il resterait UNKNOWN en permanence.
-Déclarez `inventory`, `sessions` et `processors`.
+**Conséquence pratique :** déclarez `Oracle-Lic-Options` aussi sur les
+bases 9i. Il détecte le risque principal — Partitioning en tête, de loin
+la première cause de redressement — sans prétendre à l'exhaustivité.
+
+Ces mêmes preuves structurelles s'appliquent à **toutes** les versions,
+en recoupement du relevé d'usage : `etc/structural-evidence.map`.
 
 ### 2. Windows Server 2003 : couvert par VBScript, et par lui seul
 
@@ -168,20 +179,93 @@ comme sous Linux.
 
 ## Oracle Database
 
-| Version | Usage options | HWM | Cœurs `V$OSSTAT` | Multitenant | Statut |
-|---|---|---|---|---|---|
-| 9.2 | **non** | non | non | non | dégradé — voir limite 1 |
-| 10.1 / 10.2 | oui | oui | non | non | supporté |
-| 11.1 / 11.2 | oui | oui | oui | non | supporté |
-| 12.1 / 12.2 | oui | oui | oui | oui | supporté |
-| 18c / 19c | oui | oui | oui | oui | supporté |
+| Version | Relevé d'usage | HWM | Cœurs `V$OSSTAT` | Packs contrôlables | Multitenant | Statut |
+|---|---|---|---|---|---|---|
+| 9.2 | non | non | non | non | non | partiel — preuves structurelles seules |
+| 10.1 / 10.2 | oui | oui | non | non | non | supporté |
+| 11.1 / 11.2 | oui | oui | oui | **oui** | non | supporté |
+| 12.1 / 12.2 | oui | oui | oui | oui | oui | supporté |
+| 18c / 19c | oui | oui | oui | oui | oui | supporté |
+
+### Ce qui distingue 12c de 19c
+
+**Le seuil Multitenant dépend de la version.** Oracle inclut **une seule
+PDB** utilisateur de 12.1 à 18c, et **trois** à partir de 19c. Un seuil
+fixe accuserait à tort une 19c à trois PDB.
+
+C'est pour cette raison que Multitenant est traité par le moteur et non
+par `licensable-features.map` : un champ fixe ne sait pas exprimer une
+règle qui varie avec la version. Le seuil est surchargeable par
+`MULTITENANT_INCLUDED_PDBS`.
+
+> Cette limite a déjà évolué et peut encore changer. Vérifiez-la dans le
+> *Licensing Information User Manual* de votre version exacte avant de
+> vous fier au défaut.
+
+**Preuves structurelles propres à 12.1+ :**
+
+| Preuve | Option |
+|---|---|
+| `inmemory_tables`, `param.inmemory_size` | Database In-Memory (12.1.0.2+) |
+| `redaction_policies` | Advanced Security (Data Redaction) |
+| `ilm_policies`, `param.heat_map` | Advanced Compression (ADO) |
+| `priv_captures` | Database Vault ; **inclus en EE depuis 19c** |
+
+**Devenu gratuit en cours de route** — le plugin en tient compte par la
+version, donc ne signale que là où c'était encore payant :
+
+| Feature | Payante jusqu'à | Incluse depuis |
+|---|---|---|
+| Spatial | 12.1 | 12.2 (annonce déc. 2019) |
+| Advanced Analytics / Data Mining | 12.1 | 12.2 (annonce déc. 2019) |
+| Flashback Data Archive (Total Recall) | 12.1.0.1 | 12.1.0.2 |
+| Privilege Analysis | 18c | 19c |
+| ASO network encryption | 11.2 | 12.1 |
+
+### Ce qui distingue 10g de 11g
+
+**`CONTROL_MANAGEMENT_PACK_ACCESS` (11.1+).** Ce paramètre commande
+l'accès aux management packs Diagnostics et Tuning. Sa valeur par défaut
+en Enterprise Edition est `DIAGNOSTIC+TUNING` : **une base neuve autorise
+leur usage même si le client ne les a pas achetés.** Oracle recommande
+`NONE` dans ce cas.
+
+Le plugin le contrôle et signale les packs accessibles non déclarés en
+**WARNING**, sous la métrique `exposed_packs` — une porte ouverte n'est
+pas un usage constaté, et le CRITICAL reste réservé aux usages avérés.
+La sortie longue donne la remédiation.
+
+Sur 10g le paramètre n'existe pas : les packs y étaient contrôlés par
+Enterprise Manager, sans trace exploitable en base. Seul le relevé
+d'usage les révèle.
+
+**Preuves structurelles propres à 11.1+ :**
+
+| Preuve | Option | Pourquoi pas avant 11.1 |
+|---|---|---|
+| `oltp_compressed_tables` | Advanced Compression | `COMPRESS_FOR` n'existe pas avant : BASIC (incluse) et OLTP (payante) sont indiscernables |
+| `hcc_compressed_tables` | Advanced Compression | idem ; incluse sur Exadata, ZFSSA et Pillar — à vérifier à la main |
+| `securefile_compressed` / `_deduplicated` | Advanced Compression | SecureFiles apparaît en 11.1 |
+| `securefile_encrypted` | Advanced Security | idem |
+| `adg_readonly_apply` | Active Data Guard | l'option apparaît en 11.1 |
+| `flashback_archives` | Advanced Compression | Total Recall en 11g, inclus depuis 12.1.0.2 |
+
+Sur 9i et 10g, le collecteur n'émet pas ces clés et les règles restent
+sans effet : pas de faux positif, mais pas de détection non plus. La
+compression payante y est indétectable de façon fiable — c'est une
+limite assumée plutôt qu'un constat que l'on ne saurait étayer.
 
 Vues apparues au fil des versions :
 
 | Vue ou colonne | Depuis |
 |---|---|
 | `V$OPTION`, `V$LICENSE` | 8i |
+| `DBA_PART_TABLES`, `DBA_PART_INDEXES` | 8i |
+| `DBA_SA_POLICIES` (Label Security) | 8i |
 | `DBA_FEATURE_USAGE_STATISTICS` | 10.1 |
+| `DBA_MINING_MODELS` | 10.1 |
+| `DBA_ENCRYPTED_COLUMNS` (TDE) | 10.2 |
+| `DBA_DV_REALM` (Database Vault) | 10.2 |
 | `DBA_HIGH_WATER_MARK_STATISTICS` | 10.1 |
 | `V$OSSTAT` | 10.1 |
 | `V$DATABASE.PLATFORM_NAME` | 10.1 |

@@ -37,9 +37,11 @@ param(
     [string] $LicensedProcessors,
     [int]    $MaxCacheAge = 93600,
     [switch] $IgnoreHistorical,
+    [string] $MultitenantIncluded,
     [switch] $Detail,
     [string] $CacheDir   = 'C:\ProgramData\oracle-licensing\cache',
-    [string] $MapFile    = 'C:\ProgramData\oracle-licensing\licensable-features.map',
+    [string] $MapFile      = 'C:\ProgramData\oracle-licensing\licensable-features.map',
+    [string] $EvidenceFile = 'C:\ProgramData\oracle-licensing\structural-evidence.map',
     [string] $ConfigFile = 'C:\ProgramData\oracle-licensing\oracle-licensing.conf',
     [switch] $ShowVersion
 )
@@ -109,6 +111,9 @@ if (-not (Test-Path $CacheFile)) {
 if (-not (Test-Path $MapFile)) {
     Exit-Unknown ("table de correspondance illisible : {0}" -f $MapFile)
 }
+if (-not (Test-Path $EvidenceFile)) {
+    Exit-Unknown ("table des preuves structurelles illisible : {0}" -f $EvidenceFile)
+}
 
 # ---------------------------------------------------------------------
 # Chargement du cache
@@ -117,6 +122,7 @@ $KV       = @{}
 $OPTV     = @{}
 $FeatUsed = @{}; $FeatDet = @{}; $FeatLast = @{}; $FeatFirst = @{}; $FeatAux = @{}
 $HWM      = @{}
+$OBJV     = @{}
 $NFeat    = 0
 
 foreach ($line in (Get-Content $CacheFile)) {
@@ -127,6 +133,7 @@ foreach ($line in (Get-Content $CacheFile)) {
         'KV'   { $KV[$f[1]]   = $f[2] }
         'OPT'  { $OPTV[$f[1]] = $f[2] }
         'HWM'  { $HWM[$f[1]]  = $f[2] }
+        'OBJ'  { $OBJV[$f[1]] = $f[2] }
         'FEAT' {
             if ($f.Length -lt 7) { continue }
             $FeatUsed[$f[1]]  = $f[2]
@@ -191,6 +198,28 @@ foreach ($line in (Get-Content $MapFile)) {
 if ($Rules.Length -eq 0) { Exit-Unknown 'table de correspondance vide ou illisible' }
 
 # ---------------------------------------------------------------------
+# Preuves structurelles : usage atteste par l'existence d'objets dans le
+# dictionnaire. Seule source disponible avant Oracle 10.1, et
+# recoupement utile ensuite -- l'echantillonnage MMON peut manquer un
+# usage, une table partitionnee ne se cache pas.
+# ---------------------------------------------------------------------
+$Evidence = @()
+foreach ($line in (Get-Content $EvidenceFile)) {
+    $t = $line.Trim()
+    if ($t -eq '' -or $t.StartsWith('#')) { continue }
+    $f = $t -split '\|'
+    if ($f.Length -ne 6) { continue }
+    $ev = New-Object PSObject
+    $ev | Add-Member NoteProperty Key      $f[0]
+    $ev | Add-Member NoteProperty Option   $f[1]
+    $ev | Add-Member NoteProperty Editions $f[2]
+    $ev | Add-Member NoteProperty MinCount ([int]$f[3])
+    $ev | Add-Member NoteProperty FreeFrom $f[4]
+    $ev | Add-Member NoteProperty Note     $f[5]
+    $Evidence += $ev
+}
+
+# ---------------------------------------------------------------------
 # Comparaison de versions Oracle : "19.22.0.0.0" >= "12.2" vaut vrai.
 # [version] plafonne a quatre composants, d'ou une comparaison manuelle.
 # ---------------------------------------------------------------------
@@ -231,19 +260,45 @@ function Join-SortedKeys($Table) {
 # =====================================================================
 # Mode "options"
 # =====================================================================
-function Invoke-ModeOptions {
-    # Oracle 9i n'expose aucune source d'usage des options :
-    # DBA_FEATURE_USAGE_STATISTICS n'apparait qu'en 10.1. Conclure a la
-    # conformite serait un mensonge ; on le dit.
-    if (-not $CapUsage) {
-        Write-Output ("UNKNOWN - {0}/{1} ({2} {3}): controle d'usage impossible, DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir d'Oracle 10.1|unlicensed_now=U unlicensed_past=U cache_age={4}s;;{5};0" -f `
-            $DbName, $Sid, $Edition, $DbVersion, $Age, $MaxCacheAge)
-        Write-Output "Sur cette version, seuls les modes inventory (options liees au binaire)"
-        Write-Output "et sessions sont exploitables. Ne declarez pas ce service dans Centreon"
-        Write-Output "pour les bases 9i : il resterait UNKNOWN en permanence."
-        $script:ExitCode = $UNKNOWN; return
+# Nombre de PDB utilisateur incluses sans licence Multitenant.
+#
+# Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
+# trois a partir de 19c. Un seuil fixe produirait un faux positif sur
+# 19c -- accuser a tort est pire qu'un faux negatif, car cela fait
+# ignorer les vraies alertes.
+#
+# Verifiez la valeur applicable dans le Licensing Information User
+# Manual de votre version exacte : elle a deja change, elle peut encore
+# changer.
+function Get-MultitenantIncluded {
+    if ($MultitenantIncluded) {
+        $n = 0
+        if ([int]::TryParse($MultitenantIncluded, [ref] $n)) { return $n }
     }
+    if (Test-VersionGe $DbVersion '19') { return 3 }
+    return 1
+}
 
+# Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
+#
+# Ce parametre (11.1 et suivants) commande l'acces aux management packs.
+# Sa valeur par defaut en Enterprise Edition est DIAGNOSTIC+TUNING : une
+# base neuve autorise donc leur usage, meme sans les avoir achetes.
+#
+# Une base exposee n'est pas une base en infraction : c'est une porte
+# ouverte, pas un usage constate. D'ou une categorie distincte, en
+# WARNING, qui laisse le CRITICAL aux usages averes.
+function Get-ExposedPacks([string] $Value) {
+    $out = @{}
+    if (-not $Value) { return $out }
+    $v = $Value.ToUpper() -replace '[ \t]', ''
+    if ($v -eq '' -or $v -eq 'NONE') { return $out }
+    if ($v -eq 'DIAGNOSTIC' -or $v -eq 'DIAGNOSTIC+TUNING') { $out['Diagnostics Pack'] = 1 }
+    if ($v -eq 'DIAGNOSTIC+TUNING')                          { $out['Tuning Pack'] = 1 }
+    return $out
+}
+
+function Invoke-ModeOptions {
     $violNow = @{}; $violPast = @{}; $covered = @{}; $freed = @{}; $wrongEdition = @{}
     $detail  = @{}
 
@@ -297,19 +352,74 @@ function Invoke-ModeOptions {
         else                       { $violPast[$opt] = 1 }
     }
 
+    # Un objet qui existe atteste un usage COURANT : ces constats vont
+    # toujours en infraction courante, jamais en historique.
+    foreach ($ev in $Evidence) {
+        if (-not $OBJV.ContainsKey($ev.Key)) { continue }
+        $cnt = 0
+        [void][int]::TryParse($OBJV[$ev.Key], [ref] $cnt)
+        if ($cnt -le $ev.MinCount) { continue }
+
+        $opt = $ev.Option
+        if ($ev.FreeFrom -ne '-' -and (Test-VersionGe $DbVersion $ev.FreeFrom)) {
+            $freed[$opt] = 1
+            continue
+        }
+
+        $noteTxt = ''
+        if ($ev.Note -ne '') { $noteTxt = ' ; ' + $ev.Note }
+        $entry = "`n    - {0} : {1} objet(s) [preuve structurelle]{2}" -f $ev.Key, $cnt, $noteTxt
+        if ($detail.ContainsKey($opt)) { $detail[$opt] = $detail[$opt] + $entry }
+        else                           { $detail[$opt] = $entry }
+
+        if ($ev.Editions -ne 'ALL' -and $Edition -ne 'UNKNOWN' -and
+            (',' + $ev.Editions + ',').IndexOf(',' + $Edition + ',') -lt 0) {
+            $wrongEdition[$opt] = 1
+            continue
+        }
+        if (Test-IsLicensed $opt) { $covered[$opt] = 1 }
+        else                      { $violNow[$opt] = 1 }
+    }
+
     # Une option deja en infraction courante ne doit pas etre recomptee.
     foreach ($o in @($violNow.Keys))      { $violPast.Remove($o) }
     foreach ($o in @($wrongEdition.Keys)) { $violNow.Remove($o); $violPast.Remove($o); $covered.Remove($o) }
+
+    # Multitenant : traite ici plutot que par la table des features, son
+    # seuil dependant de la version installee.
+    $nPdb = Get-KVInt 'db.pdb_count'
+    $mtIncl = Get-MultitenantIncluded
+    if ($nPdb -gt $mtIncl) {
+        $opt = 'Multitenant'
+        $entry = "`n    - {0} PDB utilisateur, {1} incluse(s) en Oracle {2} [regle produit]" -f $nPdb, $mtIncl, $DbVersion
+        if ($detail.ContainsKey($opt)) { $detail[$opt] = $detail[$opt] + $entry }
+        else                           { $detail[$opt] = $entry }
+        if ($Edition -ne 'EE' -and $Edition -ne 'UNKNOWN') { $wrongEdition[$opt] = 1 }
+        elseif (Test-IsLicensed $opt)                      { $covered[$opt] = 1 }
+        else                                               { $violNow[$opt] = 1 }
+    }
+
+    # Exposition aux management packs : on ne signale que ce qui n'est
+    # pas deja constate ailleurs.
+    $cmpa = Get-KV 'param.control_management_pack_access' ''
+    $exposed = Get-ExposedPacks $cmpa
+    foreach ($o in @($exposed.Keys)) {
+        if ((Test-IsLicensed $o) -or $violNow.ContainsKey($o) -or
+            $violPast.ContainsKey($o) -or $wrongEdition.ContainsKey($o)) {
+            $exposed.Remove($o)
+        }
+    }
 
     $nNow  = $violNow.Count
     $nPast = $violPast.Count
     if ($IgnoreHistorical) { $nPast = 0 }
     $nCov  = $covered.Count
     $nEdt  = $wrongEdition.Count
+    $nExp  = $exposed.Count
 
     $status = $OK; $label = 'OK'
-    if ($nEdt -gt 0 -or $nNow -gt 0) { $status = $CRITICAL; $label = 'CRITICAL' }
-    elseif ($nPast -gt 0)            { $status = $WARNING;  $label = 'WARNING' }
+    if ($nEdt -gt 0 -or $nNow -gt 0)      { $status = $CRITICAL; $label = 'CRITICAL' }
+    elseif ($nPast -gt 0 -or $nExp -gt 0) { $status = $WARNING;  $label = 'WARNING' }
 
     # Un cache perime rend le verdict caduc, sans masquer une infraction
     # deja constatee.
@@ -323,19 +433,40 @@ function Invoke-ModeOptions {
     if ($nEdt  -gt 0) { $parts += ("{0} option(s) incompatible(s) avec l'edition {1}: {2}" -f $nEdt, $Edition, (Join-SortedKeys $wrongEdition)) }
     if ($nNow  -gt 0) { $parts += ("{0} option(s) non licenciee(s) en cours d'utilisation: {1}" -f $nNow, (Join-SortedKeys $violNow)) }
     if ($nPast -gt 0) { $parts += ("{0} option(s) non licenciee(s) avec usage historique: {1}" -f $nPast, (Join-SortedKeys $violPast)) }
+    if ($nExp  -gt 0) { $parts += ("{0} pack(s) accessible(s) sans licence declaree (CONTROL_MANAGEMENT_PACK_ACCESS={1}): {2}" -f $nExp, $cmpa, (Join-SortedKeys $exposed)) }
     if ($parts.Length -eq 0) { $parts += ("aucune derive detectee sur {0} option(s) declaree(s)" -f $nCov) }
 
-    Write-Output ("{0} - {1}/{2} ({3} {4}): {5}{6}|unlicensed_now={7};;1;0 unlicensed_past={8};1;;0 wrong_edition={9};;1;0 licensed_used={10};;;0 cache_age={11}s;;{12};0" -f `
+    # Sans DBA_FEATURE_USAGE_STATISTICS (avant Oracle 10.1), seules les
+    # preuves structurelles sont disponibles. Le verdict reste valable
+    # pour ce qu'il couvre, mais ne doit pas se faire passer pour complet.
+    $partial = ''
+    if (-not $CapUsage) {
+        $partial = " [couverture partielle: analyse structurelle seule, releve d'usage absent avant Oracle 10.1]"
+    }
+
+    Write-Output ("{0} - {1}/{2} ({3} {4}): {5}{6}{13}|unlicensed_now={7};;1;0 unlicensed_past={8};1;;0 wrong_edition={9};;1;0 exposed_packs={14};1;;0 licensed_used={10};;;0 cache_age={11}s;;{12};0" -f `
         $label, $DbName, $Sid, $Edition, $DbVersion, ($parts -join '; '), $stale, `
-        $nNow, $nPast, $nEdt, $nCov, $Age, $MaxCacheAge)
+        $nNow, $nPast, $nEdt, $nCov, $Age, $MaxCacheAge, $partial, $nExp)
 
     if ($Detail -or $status -ne $OK) {
         if ($nEdt  -gt 0) { Write-Group "Options incompatibles avec l'edition installee :" $wrongEdition $detail }
         if ($nNow  -gt 0) { Write-Group "Options utilisees SANS licence declaree :" $violNow $detail }
         if ($nPast -gt 0) { Write-Group "Options non licenciees, usage historique uniquement :" $violPast $detail }
+        if ($nExp -gt 0) {
+            Write-Output 'Packs accessibles sans licence declaree (aucun usage constate a ce jour) :'
+            foreach ($o in ($exposed.Keys | Sort-Object)) { Write-Output ("  {0}" -f $o) }
+            Write-Output ("  CONTROL_MANAGEMENT_PACK_ACCESS={0} autorise leur usage a tout moment." -f $cmpa)
+            Write-Output '  Si ces packs ne sont pas detenus, positionnez le parametre a NONE.'
+        }
         if ($Detail -and $nCov -gt 0) { Write-Group "Options couvertes par la declaration :" $covered $detail }
         if ($Detail -and $freed.Count -gt 0) {
             Write-Output ("Features payantes par le passe, incluses en {0} : {1}" -f $DbVersion, (Join-SortedKeys $freed))
+        }
+        if (-not $CapUsage) {
+            Write-Output ("Oracle {0} : DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir de 10.1." -f $DbVersion)
+            Write-Output "Ce verdict repose sur les seules preuves structurelles du dictionnaire."
+            Write-Output "Non couverts sur cette version : management packs Diagnostics et Tuning,"
+            Write-Output "et les usages sans objet persistant (compression RMAN, Data Guard, Data Pump)."
         }
     }
     $script:ExitCode = $status; return

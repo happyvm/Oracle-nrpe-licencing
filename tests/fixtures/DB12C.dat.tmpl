@@ -1,0 +1,60 @@
+# Oracle 12.2 : la limite Multitenant y est d'UNE seule PDB utilisateur,
+# contre trois a partir de 19c. Cette base en a deux : l'option est donc
+# requise ici, alors que la meme configuration serait incluse en 19c.
+#
+# Elle utilise par ailleurs Database In-Memory, Data Redaction et les
+# politiques ILM -- trois options apparues en 12.1 que le releve d'usage
+# ne remonte pas toujours.
+KV|collect.version|1.1.0
+KV|collect.epoch|@EPOCH@
+KV|collect.date|@DATE@
+KV|inst.sid|DB12C
+KV|inst.oracle_home|/u01/app/oracle/product/12.2.0/dbhome_1
+KV|inst.running|1
+KV|host.name|srvora-12c.example.lan
+KV|host.arch|x86_64
+KV|host.cpu.sockets|2
+KV|host.cpu.cores|24
+KV|host.cpu.threads|48
+KV|host.cpu.reliable|1
+KV|host.virt|none
+KV|host.core_factor|0.5
+KV|host.processor_licenses|12
+KV|inst.version|12.2.0.1.0
+KV|db.version_major|12
+KV|collect.cap.feature_usage|1
+KV|collect.cap.hwm|1
+KV|collect.cap.osstat_cores|1
+KV|collect.cap.multitenant|1
+KV|db.name|DB12C
+KV|db.dbid|667788990
+KV|db.role|PRIMARY
+KV|db.open_mode|READ WRITE
+KV|db.edition|EE
+KV|db.cdb|YES
+KV|db.pdb_count|2
+KV|db.rac_instances|1
+KV|param.cpu_count|48
+KV|param.control_management_pack_access|NONE
+KV|param.statistics_level|TYPICAL
+KV|param.inmemory_size|8589934592
+KV|param.heat_map|ON
+KV|license.sessions_current|150
+KV|license.sessions_highwater|880
+KV|license.sessions_max|0
+KV|collect.status|ok
+OPT|Partitioning|TRUE
+OPT|Real Application Clusters|FALSE
+FEAT|Partitioning (user)|TRUE|1500|2026-08-20|2017-09-01|11
+FEAT|Oracle Java Virtual Machine (system)|TRUE|1500|2026-08-20|2017-09-01|0
+OBJ|part_tables|11
+OBJ|part_indexes|28
+OBJ|inmemory_tables|6
+OBJ|redaction_policies|3
+OBJ|ilm_policies|2
+OBJ|priv_captures|0
+OBJ|oltp_compressed_tables|0
+OBJ|securefile_compressed|0
+OBJ|sdo_columns|0
+OBJ|rac_instances|1
+HWM|SESSIONS|880|150

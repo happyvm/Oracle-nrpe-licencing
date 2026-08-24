@@ -38,9 +38,10 @@ Const CRITICAL_ = 2
 Const UNKNOWN_ = 3
 
 ' --- Etat global -----------------------------------------------------
-Dim gKV, gOPT, gFeatUsed, gFeatDet, gFeatLast, gFeatFirst, gFeatAux, gHWM
+Dim gKV, gOPT, gFeatUsed, gFeatDet, gFeatLast, gFeatFirst, gFeatAux, gHWM, gOBJ
 Dim gNFeat
 Dim gRulePat, gRuleOpt, gRuleEds, gRuleAux, gRuleFree, gRuleNote, gNRules
+Dim gEvKey, gEvOpt, gEvEds, gEvMin, gEvFree, gEvNote, gNEv
 Dim gDbName, gEdition, gDbVersion, gVMajor, gCStatus, gCEpoch, gAge, gCapUsage
 
 Dim oFSO
@@ -54,8 +55,10 @@ Set gFeatLast = CreateObject("Scripting.Dictionary")
 Set gFeatFirst= CreateObject("Scripting.Dictionary")
 Set gFeatAux  = CreateObject("Scripting.Dictionary")
 Set gHWM      = CreateObject("Scripting.Dictionary")
+Set gOBJ      = CreateObject("Scripting.Dictionary")
 gNFeat = 0
 gNRules = 0
+gNEv = 0
 
 ' =====================================================================
 ' Utilitaires
@@ -245,6 +248,7 @@ Sub LoadCache(sPath)
                     Case "KV"  : gKV(f(1))  = f(2)
                     Case "OPT" : gOPT(f(1)) = f(2)
                     Case "HWM" : gHWM(f(1)) = f(2)
+                    Case "OBJ" : gOBJ(f(1)) = f(2)
                     Case "FEAT"
                         If UBound(f) >= 6 Then
                             gFeatUsed(f(1))  = f(2)
@@ -288,6 +292,35 @@ Sub LoadRules(sPath)
     gNRules = n
 End Sub
 
+' Preuves structurelles : usage atteste par l'existence d'objets dans le
+' dictionnaire. Seule source disponible avant Oracle 10.1, et
+' recoupement utile ensuite -- l'echantillonnage MMON peut manquer un
+' usage, une table partitionnee ne se cache pas.
+Sub LoadEvidence(sPath)
+    Dim oFile, sLine, f, n
+    ReDim gEvKey(256), gEvOpt(256), gEvEds(256)
+    ReDim gEvMin(256), gEvFree(256), gEvNote(256)
+    n = 0
+    Set oFile = oFSO.OpenTextFile(sPath, 1, False)
+    Do Until oFile.AtEndOfStream
+        sLine = Trim(oFile.ReadLine)
+        If Len(sLine) > 0 And Left(sLine, 1) <> "#" Then
+            f = Split(sLine, "|")
+            If UBound(f) = 5 Then
+                gEvKey(n)  = f(0)
+                gEvOpt(n)  = f(1)
+                gEvEds(n)  = f(2)
+                gEvMin(n)  = ToLong(f(3))
+                gEvFree(n) = f(4)
+                gEvNote(n) = f(5)
+                n = n + 1
+            End If
+        End If
+    Loop
+    oFile.Close
+    gNEv = n
+End Sub
+
 Function GetKV(sKey, sDefault)
     If gKV.Exists(sKey) Then
         If Len(gKV(sKey)) > 0 Then
@@ -306,8 +339,8 @@ End Function
 ' Arguments
 ' =====================================================================
 Dim gSid, gMode, gWarn, gCrit, gLicOptions, gLicProcessors
-Dim gMaxCacheAge, gIgnoreHistorical, gDetail
-Dim gCacheDir, gMapFile, gConfigFile, gNowOverride
+Dim gMaxCacheAge, gIgnoreHistorical, gDetail, gMtIncluded
+Dim gCacheDir, gMapFile, gEvidenceFile, gConfigFile, gNowOverride
 Dim oArgs, oCfg
 
 ' Les arguments nommes sont analyses a la main plutot que via
@@ -356,14 +389,17 @@ gLicOptions    = ArgValue(oArgs, "LicensedOptions")
 gLicProcessors = ArgValue(oArgs, "LicensedProcessors")
 gCacheDir      = ArgValue(oArgs, "CacheDir")
 gMapFile       = ArgValue(oArgs, "MapFile")
+gEvidenceFile  = ArgValue(oArgs, "EvidenceFile")
 gConfigFile    = ArgValue(oArgs, "ConfigFile")
 gNowOverride   = ArgValue(oArgs, "NowEpoch")
+gMtIncluded       = ArgValue(oArgs, "MultitenantIncluded")
 gIgnoreHistorical = oArgs.Exists("IgnoreHistorical")
 gDetail           = oArgs.Exists("Detail")
 
 If Len(gMode) = 0 Then gMode = "options"
 If Len(gCacheDir) = 0   Then gCacheDir   = "C:\ProgramData\oracle-licensing\cache"
 If Len(gMapFile) = 0    Then gMapFile    = "C:\ProgramData\oracle-licensing\licensable-features.map"
+If Len(gEvidenceFile) = 0 Then gEvidenceFile = "C:\ProgramData\oracle-licensing\structural-evidence.map"
 If Len(gConfigFile) = 0 Then gConfigFile = "C:\ProgramData\oracle-licensing\oracle-licensing.conf"
 
 gMaxCacheAge = 93600
@@ -391,9 +427,13 @@ End If
 If Not oFSO.FileExists(gMapFile) Then
     Fail "table de correspondance illisible : " & gMapFile
 End If
+If Not oFSO.FileExists(gEvidenceFile) Then
+    Fail "table des preuves structurelles illisible : " & gEvidenceFile
+End If
 
 LoadCache sCacheFile
 LoadRules gMapFile
+LoadEvidence gEvidenceFile
 
 gDbName    = GetKV("db.name", gSid)
 gEdition   = GetKV("db.edition", "UNKNOWN")
@@ -432,6 +472,47 @@ Function IsLicensed(sOption)
     Next
 End Function
 
+' Nombre de PDB utilisateur incluses sans licence Multitenant.
+'
+' Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
+' trois a partir de 19c. Un seuil fixe produirait un faux positif sur
+' 19c -- accuser a tort est pire qu'un faux negatif, car cela fait
+' ignorer les vraies alertes.
+'
+' Verifiez la valeur applicable dans le Licensing Information User
+' Manual de votre version exacte : elle a deja change, elle peut encore
+' changer.
+Function MultitenantIncluded()
+    If Len(gMtIncluded) > 0 Then
+        MultitenantIncluded = ToLong(gMtIncluded)
+        Exit Function
+    End If
+    If VersionGe(gDbVersion, "19") Then
+        MultitenantIncluded = 3
+    Else
+        MultitenantIncluded = 1
+    End If
+End Function
+
+' Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
+'
+' Ce parametre (11.1 et suivants) commande l'acces aux management packs.
+' Sa valeur par defaut en Enterprise Edition est DIAGNOSTIC+TUNING : une
+' base neuve autorise donc leur usage, meme sans les avoir achetes.
+'
+' Une base exposee n'est pas une base en infraction : c'est une porte
+' ouverte, pas un usage constate. D'ou une categorie distincte, en
+' WARNING, qui laisse le CRITICAL aux usages averes.
+Function ExposedPacks(sValue)
+    Dim oOut, v
+    Set oOut = CreateObject("Scripting.Dictionary")
+    Set ExposedPacks = oOut
+    v = UCase(Replace(Replace(Trim(sValue & ""), " ", ""), vbTab, ""))
+    If v = "" Or v = "NONE" Then Exit Function
+    If v = "DIAGNOSTIC" Or v = "DIAGNOSTIC+TUNING" Then oOut("Diagnostics Pack") = 1
+    If v = "DIAGNOSTIC+TUNING" Then oOut("Tuning Pack") = 1
+End Function
+
 ' =====================================================================
 ' Mode "options" : detection de derive de conformite.
 '
@@ -447,22 +528,8 @@ Function ModeOptions()
     Dim oViolNow, oViolPast, oCovered, oFreed, oWrongEd, oDetail
     Dim aFeat, i, r, sFeature, nDet, sUsed, nAux, nMatched
     Dim oRe, sOpt, sNote, sFirst, sLast, sEntry
-    Dim nNow, nPast, nCov, nEdt, nStatus, sLabel, sStale, sMsg
-    Dim aKeys, k
-
-    ' Oracle 9i n'expose aucune source d'usage des options :
-    ' DBA_FEATURE_USAGE_STATISTICS n'apparait qu'en 10.1. Conclure a la
-    ' conformite serait un mensonge ; on le dit.
-    If Not gCapUsage Then
-        WScript.Echo "UNKNOWN - " & gDbName & "/" & gSid & " (" & gEdition & " " & gDbVersion & _
-            "): controle d'usage impossible, DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir d'Oracle 10.1" & _
-            "|unlicensed_now=U unlicensed_past=U cache_age=" & gAge & "s;;" & gMaxCacheAge & ";0"
-        WScript.Echo "Sur cette version, seuls les modes inventory (options liees au binaire)"
-        WScript.Echo "et sessions sont exploitables. Ne declarez pas ce service dans Centreon"
-        WScript.Echo "pour les bases 9i : il resterait UNKNOWN en permanence."
-        ModeOptions = UNKNOWN_
-        Exit Function
-    End If
+    Dim nNow, nPast, nCov, nEdt, nExp, nStatus, sLabel, sStale, sMsg, sPartial
+    Dim aKeys, k, e, nCnt, oExposed, sCmpa, nPdb, nMtIncl
 
     Set oViolNow  = CreateObject("Scripting.Dictionary")
     Set oViolPast = CreateObject("Scripting.Dictionary")
@@ -536,6 +603,39 @@ Function ModeOptions()
         End If
     Next
 
+    ' Un objet qui existe atteste un usage COURANT : ces constats vont
+    ' toujours en infraction courante, jamais en historique.
+    For e = 0 To gNEv - 1
+        If gOBJ.Exists(gEvKey(e)) Then
+            nCnt = ToLong(gOBJ(gEvKey(e)))
+            If nCnt > gEvMin(e) Then
+                sOpt = gEvOpt(e)
+                If gEvFree(e) <> "-" And VersionGe(gDbVersion, gEvFree(e)) Then
+                    oFreed(sOpt) = 1
+                Else
+                    sNote = ""
+                    If Len(gEvNote(e)) > 0 Then sNote = " ; " & gEvNote(e)
+                    sEntry = vbLf & "    - " & gEvKey(e) & " : " & nCnt & _
+                             " objet(s) [preuve structurelle]" & sNote
+                    If oDetail.Exists(sOpt) Then
+                        oDetail(sOpt) = oDetail(sOpt) & sEntry
+                    Else
+                        oDetail(sOpt) = sEntry
+                    End If
+
+                    If gEvEds(e) <> "ALL" And gEdition <> "UNKNOWN" And _
+                       InStr("," & gEvEds(e) & ",", "," & gEdition & ",") = 0 Then
+                        oWrongEd(sOpt) = 1
+                    ElseIf IsLicensed(sOpt) Then
+                        oCovered(sOpt) = 1
+                    Else
+                        oViolNow(sOpt) = 1
+                    End If
+                End If
+            End If
+        End If
+    Next
+
     ' Une option deja en infraction courante ne doit pas etre recomptee.
     aKeys = oViolNow.Keys
     For i = 0 To UBound(aKeys)
@@ -548,16 +648,51 @@ Function ModeOptions()
         If oCovered.Exists(aKeys(i))  Then oCovered.Remove aKeys(i)
     Next
 
+    ' Multitenant : traite ici plutot que par la table des features, son
+    ' seuil dependant de la version installee.
+    nPdb = GetKVLong("db.pdb_count")
+    nMtIncl = MultitenantIncluded()
+    If nPdb > nMtIncl Then
+        sOpt = "Multitenant"
+        sEntry = vbLf & "    - " & nPdb & " PDB utilisateur, " & nMtIncl & _
+                 " incluse(s) en Oracle " & gDbVersion & " [regle produit]"
+        If oDetail.Exists(sOpt) Then
+            oDetail(sOpt) = oDetail(sOpt) & sEntry
+        Else
+            oDetail(sOpt) = sEntry
+        End If
+        If gEdition <> "EE" And gEdition <> "UNKNOWN" Then
+            oWrongEd(sOpt) = 1
+        ElseIf IsLicensed(sOpt) Then
+            oCovered(sOpt) = 1
+        Else
+            oViolNow(sOpt) = 1
+        End If
+    End If
+
+    ' Exposition aux management packs : on ne signale que ce qui n'est
+    ' pas deja constate ailleurs.
+    sCmpa = GetKV("param.control_management_pack_access", "")
+    Set oExposed = ExposedPacks(sCmpa)
+    aKeys = oExposed.Keys
+    For i = 0 To UBound(aKeys)
+        If IsLicensed(aKeys(i)) Or oViolNow.Exists(aKeys(i)) Or _
+           oViolPast.Exists(aKeys(i)) Or oWrongEd.Exists(aKeys(i)) Then
+            oExposed.Remove aKeys(i)
+        End If
+    Next
+
     nNow = oViolNow.Count
     nPast = oViolPast.Count
     If gIgnoreHistorical Then nPast = 0
     nCov = oCovered.Count
     nEdt = oWrongEd.Count
+    nExp = oExposed.Count
 
     nStatus = OK_ : sLabel = "OK"
     If nEdt > 0 Or nNow > 0 Then
         nStatus = CRITICAL_ : sLabel = "CRITICAL"
-    ElseIf nPast > 0 Then
+    ElseIf nPast > 0 Or nExp > 0 Then
         nStatus = WARNING_ : sLabel = "WARNING"
     End If
 
@@ -581,22 +716,50 @@ Function ModeOptions()
         If Len(sMsg) > 0 Then sMsg = sMsg & "; "
         sMsg = sMsg & nPast & " option(s) non licenciee(s) avec usage historique: " & JoinSorted(oViolPast)
     End If
+    If nExp > 0 Then
+        If Len(sMsg) > 0 Then sMsg = sMsg & "; "
+        sMsg = sMsg & nExp & " pack(s) accessible(s) sans licence declaree (CONTROL_MANAGEMENT_PACK_ACCESS=" & _
+               sCmpa & "): " & JoinSorted(oExposed)
+    End If
     If Len(sMsg) = 0 Then
         sMsg = "aucune derive detectee sur " & nCov & " option(s) declaree(s)"
     End If
 
+    ' Sans DBA_FEATURE_USAGE_STATISTICS (avant Oracle 10.1), seules les
+    ' preuves structurelles sont disponibles. Le verdict reste valable
+    ' pour ce qu'il couvre, mais ne doit pas se faire passer pour complet.
+    sPartial = ""
+    If Not gCapUsage Then
+        sPartial = " [couverture partielle: analyse structurelle seule, releve d'usage absent avant Oracle 10.1]"
+    End If
+
     WScript.Echo sLabel & " - " & gDbName & "/" & gSid & " (" & gEdition & " " & gDbVersion & "): " & _
-        sMsg & sStale & "|unlicensed_now=" & nNow & ";;1;0 unlicensed_past=" & nPast & _
-        ";1;;0 wrong_edition=" & nEdt & ";;1;0 licensed_used=" & nCov & _
+        sMsg & sStale & sPartial & "|unlicensed_now=" & nNow & ";;1;0 unlicensed_past=" & nPast & _
+        ";1;;0 wrong_edition=" & nEdt & ";;1;0 exposed_packs=" & nExp & ";1;;0 licensed_used=" & nCov & _
         ";;;0 cache_age=" & gAge & "s;;" & gMaxCacheAge & ";0"
 
     If gDetail Or nStatus <> OK_ Then
         If nEdt > 0  Then EchoGroup "Options incompatibles avec l'edition installee :", oWrongEd, oDetail
         If nNow > 0  Then EchoGroup "Options utilisees SANS licence declaree :", oViolNow, oDetail
         If nPast > 0 Then EchoGroup "Options non licenciees, usage historique uniquement :", oViolPast, oDetail
+        If nExp > 0 Then
+            WScript.Echo "Packs accessibles sans licence declaree (aucun usage constate a ce jour) :"
+            aKeys = SortedKeys(oExposed)
+            For i = 0 To UBound(aKeys)
+                WScript.Echo "  " & aKeys(i)
+            Next
+            WScript.Echo "  CONTROL_MANAGEMENT_PACK_ACCESS=" & sCmpa & " autorise leur usage a tout moment."
+            WScript.Echo "  Si ces packs ne sont pas detenus, positionnez le parametre a NONE."
+        End If
         If gDetail And nCov > 0 Then EchoGroup "Options couvertes par la declaration :", oCovered, oDetail
         If gDetail And oFreed.Count > 0 Then
             WScript.Echo "Features payantes par le passe, incluses en " & gDbVersion & " : " & JoinSorted(oFreed)
+        End If
+        If Not gCapUsage Then
+            WScript.Echo "Oracle " & gDbVersion & " : DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir de 10.1."
+            WScript.Echo "Ce verdict repose sur les seules preuves structurelles du dictionnaire."
+            WScript.Echo "Non couverts sur cette version : management packs Diagnostics et Tuning,"
+            WScript.Echo "et les usages sans objet persistant (compression RMAN, Data Guard, Data Pump)."
         End If
     End If
 

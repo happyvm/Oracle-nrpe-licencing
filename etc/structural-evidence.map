@@ -1,0 +1,96 @@
+# =====================================================================
+# structural-evidence.map
+#
+# Preuves structurelles d'usage des options Oracle payantes, obtenues
+# par interrogation directe du dictionnaire de donnees.
+#
+# POURQUOI CE FICHIER EXISTE
+#
+# 1. Oracle 9i n'a pas DBA_FEATURE_USAGE_STATISTICS (apparue en 10.1) :
+#    c'est la seule source d'usage exploitable sur ces bases.
+# 2. Sur toutes les versions, une preuve structurelle est plus forte
+#    qu'un releve d'usage : DBA_FEATURE_USAGE_STATISTICS repose sur un
+#    echantillonnage MMON hebdomadaire, qui peut manquer un usage
+#    survenu entre deux instantanes. Une table partitionnee, elle,
+#    existe ou n'existe pas.
+#
+# On n'y retient que l'incontestable : un objet dont l'existence meme
+# suppose l'option. La compression de table en est absente a dessein --
+# BASIC est incluse, OLTP est payante, et la distinction n'est lisible
+# qu'a partir de 11g.
+#
+# CE QUE CES PREUVES NE COUVRENT PAS
+#
+# Les usages qui ne laissent aucun objet persistant : compression RMAN,
+# compression du transport Data Guard, Data Pump compresse, Real
+# Application Testing, In-Memory, et les management packs Diagnostics et
+# Tuning. Sur 10.1 et au-dela, DBA_FEATURE_USAGE_STATISTICS les couvre.
+# Sur 9i, ils restent hors de portee de tout outil.
+#
+# Format (6 champs separes par "|"), identique a licensable-features.map
+# pour que les deux tables se lisent de la meme facon :
+#   1 cle        cle de l'enregistrement OBJ produit par le collecteur
+#   2 option     libelle commercial de l'option a licencier
+#   3 editions   editions ou l'option est vendable (EE, SE2, ALL)
+#   4 seuil      usage payant seulement AU-DELA de ce compte
+#                (0 = tout objet compte ; 1 pour RAC, une instance
+#                 unique n'etant pas du clustering)
+#   5 free_from  version a partir de laquelle l'option est incluse sans
+#                supplement ("-" si toujours payante)
+#   6 note       commentaire affiche dans le rapport detaille
+# =====================================================================
+
+part_tables|Partitioning|EE|0|-|Tables partitionnees hors schemas Oracle
+part_indexes|Partitioning|EE|0|-|Index partitionnes hors schemas Oracle
+
+# MDSYS est exclu cote SQL : c'est le schema de l'option elle-meme.
+sdo_columns|Spatial and Graph|EE|0|12.2|Colonnes SDO_GEOMETRY applicatives ; gratuit depuis dec. 2019
+
+olap_aws|OLAP|EE|0|-|Espaces de travail analytiques
+
+ols_policies|Label Security|EE|0|-|Politiques Label Security definies
+
+mining_models|Advanced Analytics|EE|0|12.2|Modeles de fouille de donnees ; gratuit depuis dec. 2019
+
+dv_realms|Database Vault|EE|0|-|Realms Database Vault definis
+
+encrypted_columns|Advanced Security|EE|0|-|Colonnes chiffrees (TDE)
+encrypted_tablespaces|Advanced Security|EE|0|-|Tablespaces chiffres (TDE)
+
+# Une instance unique n'est pas du clustering : seuil a 1.
+rac_instances|Real Application Clusters|EE|1|-|Instances ouvertes simultanement sur la base
+
+# --- Preuves disponibles a partir d'Oracle 11.1 ----------------------
+# Sur 9i et 10g, COMPRESS_FOR et les colonnes SecureFile n'existent pas :
+# le collecteur n'emet simplement pas ces cles, et les regles restent
+# sans effet.
+
+# Une standby ouverte en lecture pendant que le redo s'applique : l'etat
+# lui-meme atteste l'option.
+adg_readonly_apply|Active Data Guard|EE|0|-|Standby ouverte en lecture avec application du redo
+
+# La compression BASIC est incluse en EE ; seule OLTP/ADVANCED est
+# payante, et la distinction n'est lisible qu'a partir de 11.1.
+oltp_compressed_tables|Advanced Compression|EE|0|-|Tables en compression OLTP/ADVANCED
+
+# HCC est inclus sur Exadata, ZFS Storage Appliance et Pillar Axiom.
+# Le collecteur ne voit pas la baie de stockage : a verifier a la main.
+hcc_compressed_tables|Advanced Compression|EE|0|-|Compression par colonnes ; incluse sur Exadata, ZFSSA et Pillar -- verifier le stockage
+
+# Le stockage SecureFile est gratuit ; ses trois traitements ne le sont pas.
+securefile_compressed|Advanced Compression|EE|0|-|LOB SecureFile compresses
+securefile_deduplicated|Advanced Compression|EE|0|-|LOB SecureFile dedupliques
+securefile_encrypted|Advanced Security|EE|0|-|LOB SecureFile chiffres
+
+# Facture sous le nom Total Recall jusqu'a 12.1.0.1, inclus depuis 12.1.0.2.
+flashback_archives|Advanced Compression|EE|0|12.1.0.2|Flashback Data Archive (Total Recall)
+
+# --- Preuves disponibles a partir d'Oracle 12.1 ----------------------
+
+inmemory_tables|Database In-Memory|EE|0|-|Tables marquees INMEMORY
+redaction_policies|Advanced Security|EE|0|-|Politiques Data Redaction
+ilm_policies|Advanced Compression|EE|0|-|Politiques ILM / Automatic Data Optimization
+
+# Privilege Analysis relevait de Database Vault jusqu'en 18c ; il est
+# inclus en Enterprise Edition depuis 19c.
+priv_captures|Database Vault|EE|0|19.1|Captures de privileges ; inclus en EE depuis 19c
