@@ -50,7 +50,8 @@ install -m 0755 -o root -g root "$SRC/bin/check_oracle_licensing.sh" "$PLUGIN_DI
 install -m 0644 -o root -g root "$SRC/lib/licensing_eval.awk"        "$LIB_DIR/"
 
 echo "== Donnees de reference"
-install -m 0644 -o root -g root "$SRC/etc/licensable-features.map" "$CONF_DIR/"
+install -m 0644 -o root -g root "$SRC/etc/licensable-features.map"  "$CONF_DIR/"
+install -m 0644 -o root -g root "$SRC/etc/structural-evidence.map"  "$CONF_DIR/"
 
 # La configuration porte la declaration contractuelle : on ne l'ecrase
 # jamais lors d'une mise a jour.

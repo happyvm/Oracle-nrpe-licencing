@@ -10,30 +10,41 @@ c'est délibérément la première chose énoncée.
 
 ## Les trois limites dures
 
-### 1. Oracle 9i : le contrôle d'usage des options est impossible
+### 1. Oracle 9i : contrôle partiel, par preuves structurelles
 
-`DBA_FEATURE_USAGE_STATISTICS` n'existe **qu'à partir d'Oracle 10.1**. En
-9i, la base n'enregistre nulle part quelles options ont été utilisées.
-Aucun outil, quel qu'il soit, ne peut reconstituer cette information a
-posteriori.
+`DBA_FEATURE_USAGE_STATISTICS` n'existe **qu'à partir d'Oracle 10.1**.
+Le relevé d'usage échantillonné par MMON n'est donc pas disponible.
 
-Ce que 9i permet encore :
+Mais le **dictionnaire de données, lui, existe depuis 8i**. L'usage des
+options *structurelles* s'y prouve directement, et de façon plus solide
+qu'un relevé : une table partitionnée existe ou n'existe pas, là où
+l'échantillonnage MMON peut manquer un usage survenu entre deux
+instantanés.
 
-| Contrôle | 9i | Pourquoi |
+| Contrôle | 9i | Source |
 |---|---|---|
-| Options liées au binaire (`V$OPTION`) | oui | présent depuis 8i |
-| Sessions, high-water mark (`V$LICENSE`) | oui | présent depuis 8i |
-| Licences Processor (inventaire OS) | oui | ne dépend pas de la base |
-| **Usage réel des options payantes** | **non** | vue inexistante |
+| Licences Processor | oui | inventaire OS, indépendant de la base |
+| Sessions, high-water mark | oui | `V$LICENSE`, depuis 8i |
+| Options liées au binaire | oui | `V$OPTION`, depuis 8i |
+| **Partitioning** | **oui** | `DBA_PART_TABLES`, `DBA_PART_INDEXES` |
+| **Spatial** | **oui** | colonnes `SDO_GEOMETRY` hors MDSYS |
+| **OLAP** | **oui** | espaces de travail analytiques |
+| **Label Security** | **oui** | `DBA_SA_POLICIES` |
+| **RAC** | **oui** | `GV$INSTANCE` > 1 |
+| Management packs Diagnostics / Tuning | non | passaient par EM Grid Control, rien en base |
+| Usages sans objet persistant | non | compression RMAN, Data Guard, Data Pump |
 
-Le mode `options` renvoie donc **UNKNOWN** sur 9i, avec un message
-explicite. C'est volontaire : afficher OK laisserait croire à une
-conformité qui n'a pas été vérifiée, ce qui est pire que pas de contrôle
-du tout.
+Le mode `options` rend donc un **verdict réel** sur 9i, assorti de la
+mention `[couverture partielle: analyse structurelle seule, relevé
+d'usage absent avant Oracle 10.1]`. La sortie longue rappelle ce qui
+n'est pas couvert.
 
-**Conséquence pratique :** ne déclarez pas le service `Oracle-Lic-Options`
-dans Centreon pour les bases 9i — il resterait UNKNOWN en permanence.
-Déclarez `inventory`, `sessions` et `processors`.
+**Conséquence pratique :** déclarez `Oracle-Lic-Options` aussi sur les
+bases 9i. Il détecte le risque principal — Partitioning en tête, de loin
+la première cause de redressement — sans prétendre à l'exhaustivité.
+
+Ces mêmes preuves structurelles s'appliquent à **toutes** les versions,
+en recoupement du relevé d'usage : `etc/structural-evidence.map`.
 
 ### 2. Windows Server 2003 : couvert par VBScript, et par lui seul
 
@@ -181,7 +192,12 @@ Vues apparues au fil des versions :
 | Vue ou colonne | Depuis |
 |---|---|
 | `V$OPTION`, `V$LICENSE` | 8i |
+| `DBA_PART_TABLES`, `DBA_PART_INDEXES` | 8i |
+| `DBA_SA_POLICIES` (Label Security) | 8i |
 | `DBA_FEATURE_USAGE_STATISTICS` | 10.1 |
+| `DBA_MINING_MODELS` | 10.1 |
+| `DBA_ENCRYPTED_COLUMNS` (TDE) | 10.2 |
+| `DBA_DV_REALM` (Database Vault) | 10.2 |
 | `DBA_HIGH_WATER_MARK_STATISTICS` | 10.1 |
 | `V$OSSTAT` | 10.1 |
 | `V$DATABASE.PLATFORM_NAME` | 10.1 |

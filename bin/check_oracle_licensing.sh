@@ -27,6 +27,7 @@ UNKNOWN=3
 CONFIG_FILE=${ORACLE_LICENSING_CONF:-/etc/oracle-licensing/oracle-licensing.conf}
 CACHE_DIR=/var/cache/oracle-licensing
 MAP_FILE=/etc/oracle-licensing/licensable-features.map
+EVIDENCE_FILE=/etc/oracle-licensing/structural-evidence.map
 AWK_FILE=/usr/lib/oracle-licensing/licensing_eval.awk
 SID=
 MODE=options
@@ -54,7 +55,8 @@ Controle la conformite des licences Oracle a partir du cache local.
       --max-cache-age S   Age maximal du cache en secondes (defaut: $MAX_CACHE_AGE)
       --ignore-historical Ne signaler que les options en cours d'utilisation
       --cache-dir REP     Repertoire de cache
-      --map FICHIER       Table de correspondance
+      --map FICHIER       Table de correspondance des features
+      --evidence FICHIER  Table des preuves structurelles
       --awk FICHIER       Moteur d'evaluation awk
       --config FICHIER    Fichier de configuration
   -v, --verbose           Detailler chaque option en sortie longue
@@ -63,8 +65,9 @@ Controle la conformite des licences Oracle a partir du cache local.
 
 Modes :
   options     Compare les options payantes utilisees aux options detenues.
-              Requiert Oracle 10.1+ ; renvoie UNKNOWN sur 9i, ou la vue
-              DBA_FEATURE_USAGE_STATISTICS n'existe pas.
+              Combine le releve d'usage (DBA_FEATURE_USAGE_STATISTICS,
+              Oracle 10.1+) et les preuves structurelles du dictionnaire,
+              seules disponibles sur 9i.
   processors  Licences Processor calculees contre licences detenues.
   sessions    High-water mark de sessions, plancher NUP.
   freshness   Verifie que le collecteur tourne encore.
@@ -92,6 +95,7 @@ while [ $# -gt 0 ]; do
         --ignore-historical)   IGNORE_HISTORICAL=1; shift ;;
         --cache-dir)           CACHE_DIR=$2; shift 2 ;;
         --map)                 MAP_FILE=$2; shift 2 ;;
+        --evidence)            EVIDENCE_FILE=$2; shift 2 ;;
         --awk)                 AWK_FILE=$2; shift 2 ;;
         --config)              CONFIG_FILE=$2; shift 2 ;;
         -v|--verbose)          VERBOSE=1; shift ;;
@@ -114,6 +118,7 @@ fi
 CACHE_FILE=$CACHE_DIR/$SID.dat
 [ -r "$CACHE_FILE" ] || die_unknown "cache absent ou illisible : $CACHE_FILE (le collecteur a-t-il tourne ?)"
 [ -r "$MAP_FILE" ]   || die_unknown "table de correspondance illisible : $MAP_FILE"
+[ -r "$EVIDENCE_FILE" ] || die_unknown "table des preuves structurelles illisible : $EVIDENCE_FILE"
 [ -r "$AWK_FILE" ]   || die_unknown "moteur d'evaluation illisible : $AWK_FILE"
 
 # Choix de l'interpreteur awk : nawk est prefere sur les Unix ou "awk"
@@ -139,5 +144,5 @@ NOW=`date +%s`
     -v ignore_historical="$IGNORE_HISTORICAL" \
     -v verbose="$VERBOSE" \
     -f "$AWK_FILE" \
-    "$MAP_FILE" "$CACHE_FILE"
+    "$MAP_FILE" "$EVIDENCE_FILE" "$CACHE_FILE"
 exit $?

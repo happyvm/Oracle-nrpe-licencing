@@ -149,7 +149,13 @@ d'urgence un `SQL Tuning Advisor` lancé une fois en 2021 et un
 `DBA_FEATURE_USAGE_STATISTICS` aux options commerciales. C'est de la
 **donnée, pas du code** : elle se met à jour sans toucher aux scripts.
 
-Elle gère notamment les pièges classiques :
+Elle est complétée par `etc/structural-evidence.map`, qui associe des
+**preuves structurelles** — l'existence d'objets dans le dictionnaire —
+aux options correspondantes. Une table partitionnée prouve l'usage de
+Partitioning plus sûrement qu'un relevé MMON, qui échantillonne. C'est
+la seule source disponible sur 9i, et un recoupement utile ailleurs.
+
+La table des features gère notamment les pièges classiques :
 
 - `Partitioning (system)` est gratuit, seul `(user)` engage la licence ;
 - `SecureFiles (user)` est gratuit, seules la compression, la
@@ -226,11 +232,13 @@ Périmètre couvert : **Windows Server 2003 → 2025**, **RHEL 5 → 9**,
 
 **Trois limites à connaître avant de déployer :**
 
-1. **Oracle 9i ne permet pas le contrôle d'usage des options.**
-   `DBA_FEATURE_USAGE_STATISTICS` n'existe qu'à partir de 10.1 ; la base
-   n'enregistre nulle part quelles options ont servi. Le mode `options`
-   renvoie donc UNKNOWN plutôt qu'un OK trompeur. Sur ces bases,
-   déclarez `inventory`, `sessions` et `processors`, pas `options`.
+1. **Sur Oracle 9i, le contrôle d'usage est partiel.**
+   `DBA_FEATURE_USAGE_STATISTICS` n'existe qu'à partir de 10.1, mais le
+   dictionnaire permet de prouver directement l'usage des options
+   structurelles — Partitioning, Spatial, OLAP, Label Security, RAC. Le
+   mode `options` rend donc un verdict réel, assorti de la mention
+   `[couverture partielle]`. Restent hors de portée sur 9i : les
+   management packs et les usages sans objet persistant.
 2. **VBScript n'est déployé que là où PowerShell manque.** Le langage
    est déprécié depuis 2023 (livré jusqu'à Server 2025, puis
    fonctionnalité à la demande) : l'installateur batch refuse de

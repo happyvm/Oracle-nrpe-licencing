@@ -14,6 +14,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd); readonly ROOT
 readonly CHECK=$ROOT/bin/check_oracle_licensing.sh
 readonly MAP=$ROOT/etc/licensable-features.map
 readonly AWKF=$ROOT/lib/licensing_eval.awk
+readonly EVID=$ROOT/etc/structural-evidence.map
 # Shell sous lequel exercer le plugin : permet de rejouer toute la suite
 # sur bash 3.2 (RHEL 5) comme sur bash 5 (RHEL 9).
 SHELL_UNDER_TEST=${SHELL_UNDER_TEST:-/bin/sh}
@@ -45,7 +46,7 @@ mkcache_variant() {
 assert_rc() {
     local want=$1 label=$2; shift 2
     local out rc
-    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" --config /dev/null "$@" 2>&1)
+    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --evidence "$EVID" --awk "$AWKF" --config /dev/null "$@" 2>&1)
     rc=$?
     if [[ $rc -eq $want ]]; then
         printf '  ok   %-58s (rc=%d)\n' "$label" "$rc"; PASS=$(( PASS + 1 ))
@@ -59,7 +60,7 @@ assert_rc() {
 assert_out() {
     local pat=$1 label=$2; shift 2
     local out
-    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" --config /dev/null "$@" 2>&1)
+    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --evidence "$EVID" --awk "$AWKF" --config /dev/null "$@" 2>&1)
     if grep -qE -- "$pat" <<<"$out"; then
         printf '  ok   %-58s\n' "$label"; PASS=$(( PASS + 1 ))
     else
@@ -97,7 +98,7 @@ assert_out 'Multitenant' "3 PDB -> option Multitenant requise" \
 
 echo "== Absence de faux positifs =="
 for noise in 'Partitioning \(system\)' 'SecureFiles \(user\)' 'Java Virtual Machine' 'Spatial'; do
-    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --awk "$AWKF" \
+    out=$("$SHELL_UNDER_TEST" "$CHECK" --cache-dir "$WORK" --map "$MAP" --evidence "$EVID" --awk "$AWKF" \
           --config /dev/null -s ORCL -m options --licensed-options "Partitioning" 2>&1)
     if grep -qE -- "$noise" <<<"$out"; then
         printf '  FAIL %-58s\n' "faux positif : $noise"; FAIL=$(( FAIL + 1 ))
@@ -164,14 +165,22 @@ assert_rc 1 "instance arretee -> WARNING en freshness" -s DOWNDB -m freshness
 assert_out 'instance arretee' "l'etat arrete est explicite"  -s DOWNDB -m freshness
 assert_rc 0 "aucune feature collectee -> pas de fausse alerte" -s DOWNDB -m options
 
-echo "== Oracle 9i : controle d'usage impossible =="
+echo "== Oracle 9i : controle par preuves structurelles =="
 mkcache DB9I 300
-# Le point critique : sur 9i, DBA_FEATURE_USAGE_STATISTICS n'existe pas.
-# Repondre OK laisserait croire a la conformite alors que rien n'a ete
-# verifie. La seule reponse honnete est UNKNOWN.
-assert_rc 3 "9i : mode options -> UNKNOWN, jamais OK" -s DB9I -m options
-assert_out 'impossible' "9i : l'impossibilite est explicitee"       -s DB9I -m options
-assert_out '10\.1'      "9i : la version requise est indiquee"      -s DB9I -m options
+# DBA_FEATURE_USAGE_STATISTICS n'existe pas avant 10.1, mais le
+# dictionnaire, lui, existe depuis 8i : une table partitionnee prouve
+# l'usage de Partitioning aussi surement qu'un releve MMON.
+assert_rc 2 "9i : Partitioning prouve par le dictionnaire -> CRITICAL" -s DB9I -m options
+assert_out 'Partitioning'      "9i : Partitioning nomme"            -s DB9I -m options
+assert_out 'preuve structurelle' "9i : la nature de la preuve est dite" -s DB9I -m options
+assert_out '24 objet'          "9i : le compte d'objets est chiffre" -s DB9I -m options
+assert_out 'couverture partielle' "9i : la couverture partielle est annoncee" -s DB9I -m options
+assert_out '10\.1'             "9i : la limite de version est rappelee" -s DB9I -m options
+assert_rc 0 "9i : options declarees -> OK" -s DB9I -m options \
+    --licensed-options "Partitioning,Spatial and Graph"
+# Une option EE prouvee sur une edition qui ne la vend pas reste une
+# anomalie structurelle, meme sans releve d'usage.
+assert_out 'Spatial'           "9i : Spatial encore payant en 9.2"  -s DB9I -m options
 assert_rc 0 "9i : inventory reste exploitable"     -s DB9I -m inventory
 assert_out 'INDISPONIBLE' "9i : inventory signale la limite"        -s DB9I -m inventory
 # V$LICENSE et l'inventaire OS existent depuis bien avant 9i.

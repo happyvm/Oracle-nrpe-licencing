@@ -19,10 +19,11 @@
 # des extensions gawk absentes de nawk et des mawk anciens.
 #
 # Appel :
-#   awk -v mode=... -v now=... [...] -f licensing_eval.awk MAP CACHE
+#   awk -v mode=... -v now=... [...] -f licensing_eval.awk MAP EVIDENCE CACHE
 #
-# Le premier fichier est la table de correspondance, le second le cache
-# de l'instance. Code retour : convention Nagios (0/1/2/3).
+# Dans l'ordre : la table de correspondance des features, la table des
+# preuves structurelles, puis le cache de l'instance.
+# Code retour : convention Nagios (0/1/2/3).
 # =====================================================================
 
 # ---------------------------------------------------------------------
@@ -92,12 +93,16 @@ BEGIN {
     FS = "|"
     OK = 0; WARNING = 1; CRITICAL = 2; UNKNOWN = 3
     nrules = 0
+    nev = 0
+    filenum = 0
 }
 
+FNR == 1 { filenum++ }
+
 # ---------------------------------------------------------------------
-# Premier fichier : la table de correspondance.
+# Premier fichier : correspondance features -> options payantes.
 # ---------------------------------------------------------------------
-FNR == NR {
+filenum == 1 {
     if ($0 ~ /^[ \t]*(#|$)/) next
     if (NF != 6) next                     # ligne malformee : ignoree
     nrules++
@@ -107,6 +112,22 @@ FNR == NR {
     r_aux[nrules]  = $4 + 0
     r_free[nrules] = $5
     r_note[nrules] = $6
+    next
+}
+
+# ---------------------------------------------------------------------
+# Second fichier : preuves structurelles.
+# ---------------------------------------------------------------------
+filenum == 2 {
+    if ($0 ~ /^[ \t]*(#|$)/) next
+    if (NF != 6) next
+    nev++
+    e_key[nev]  = $1
+    e_opt[nev]  = $2
+    e_eds[nev]  = $3
+    e_min[nev]  = $4 + 0
+    e_free[nev] = $5
+    e_note[nev] = $6
     next
 }
 
@@ -125,6 +146,7 @@ $1 == "FEAT" {
     next
 }
 $1 == "HWM"  { hwm[$2] = $3; next }
+$1 == "OBJ"  { objv[$2] = $3; next }
 
 # =====================================================================
 END {
@@ -169,23 +191,10 @@ END {
 #   OK        usage couvert, ou feature devenue gratuite dans la version
 # =====================================================================
 function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
-                          status, label, parts, np, stale, o, grp, msg) {
+                          status, label, parts, np, stale, o, grp, msg,
+                          cnt, nstruct, partial) {
     if (nrules == 0) {
         printf "UNKNOWN - table de correspondance vide ou illisible\n"
-        return UNKNOWN
-    }
-
-    # Oracle 9i n'expose aucune source d'usage des options :
-    # DBA_FEATURE_USAGE_STATISTICS n'apparait qu'en 10.1. Conclure a la
-    # conformite serait un mensonge ; on le dit.
-    if (!cap_usage) {
-        printf "UNKNOWN - %s/%s (%s %s): controle d'usage impossible, ", \
-               db_name, sid, edition, version
-        printf "DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir d'Oracle 10.1"
-        printf "|unlicensed_now=U unlicensed_past=U cache_age=%ds;;%d;0\n", age, max_cache_age
-        printf "Sur cette version, seuls les modes inventory (options liees au binaire)\n"
-        printf "et sessions sont exploitables. Ne declarez pas ce service dans Centreon\n"
-        printf "pour les bases 9i : il resterait UNKNOWN en permanence.\n"
         return UNKNOWN
     }
 
@@ -233,6 +242,37 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
         else                         viol_past[opt] = 1
     }
 
+    # ------------------------------------------------------------------
+    # Preuves structurelles.
+    #
+    # Un objet qui existe atteste un usage COURANT : ces constats vont
+    # donc toujours en infraction courante, jamais en historique.
+    # C'est la seule source disponible sur Oracle 9i, et un recoupement
+    # utile ailleurs -- l'echantillonnage MMON peut manquer un usage,
+    # une table partitionnee ne se cache pas.
+    # ------------------------------------------------------------------
+    for (i = 1; i <= nev; i++) {
+        cnt = objv[e_key[i]]
+        if (cnt == "") continue           # preuve non collectee
+        cnt = cnt + 0
+        if (cnt <= e_min[i]) continue
+
+        opt = e_opt[i]
+        if (e_free[i] != "-" && version_ge(version, e_free[i])) { freed[opt] = 1; continue }
+
+        detail[opt] = detail[opt] sprintf("\n    - %s : %d objet(s) [preuve structurelle]%s", \
+                      e_key[i], cnt, (e_note[i] != "" ? " ; " e_note[i] : ""))
+        nstruct++
+
+        if (e_eds[i] != "ALL" && edition != "UNKNOWN" \
+            && index("," e_eds[i] ",", "," edition ",") == 0) {
+            wrong_edition[opt] = 1
+            continue
+        }
+        if (is_licensed(opt)) covered[opt] = 1
+        else                  viol_now[opt] = 1
+    }
+
     # Une option deja en infraction courante ne doit pas etre recomptee.
     for (o in viol_now)      delete viol_past[o]
     for (o in wrong_edition) { delete viol_now[o]; delete viol_past[o]; delete covered[o] }
@@ -264,7 +304,14 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
     if (np == 0)
         { msg = sprintf("aucune derive detectee sur %d option(s) declaree(s)", n_cov) }
 
-    printf "%s - %s/%s (%s %s): %s%s", label, db_name, sid, edition, version, msg, stale
+    # Sans DBA_FEATURE_USAGE_STATISTICS (avant Oracle 10.1), seules les
+    # preuves structurelles sont disponibles. Le verdict reste valable
+    # pour ce qu'il couvre, mais ne doit pas se faire passer pour complet.
+    partial = ""
+    if (!cap_usage)
+        partial = " [couverture partielle: analyse structurelle seule, releve d'usage absent avant Oracle 10.1]"
+
+    printf "%s - %s/%s (%s %s): %s%s%s", label, db_name, sid, edition, version, msg, stale, partial
     printf "|unlicensed_now=%d;;1;0 unlicensed_past=%d;1;;0 wrong_edition=%d;;1;0 licensed_used=%d;;;0 cache_age=%ds;;%d;0\n", \
            n_now, n_past, n_edt, n_cov, age, max_cache_age
 
@@ -276,6 +323,12 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
         if (verbose && n_cov > 0) print_group("Options couvertes par la declaration :", covered)
         if (verbose && count_keys(freed) > 0)
             printf "Features payantes par le passe, incluses en %s : %s\n", version, join_sorted(freed)
+        if (!cap_usage) {
+            printf "Oracle %s : DBA_FEATURE_USAGE_STATISTICS n'existe qu'a partir de 10.1.\n", version
+            printf "Ce verdict repose sur les seules preuves structurelles du dictionnaire.\n"
+            printf "Non couverts sur cette version : management packs Diagnostics et Tuning,\n"
+            printf "et les usages sans objet persistant (compression RMAN, Data Guard, Data Pump).\n"
+        }
     }
     return status
 }

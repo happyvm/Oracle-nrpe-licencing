@@ -52,6 +52,20 @@ DECLARE
     -- version sur les noms de features les plus longs.
     c_maxline  CONSTANT PLS_INTEGER := 255;
 
+    -- Schemas livres par Oracle. Les objets qu'ils contiennent
+    -- appartiennent au produit, pas a l'applicatif : les compter
+    -- ferait apparaitre une option payante sur toute base neuve.
+    -- MDSYS notamment EST le schema de Spatial.
+    c_sys CONSTANT VARCHAR2(2000) :=
+        '''SYS'',''SYSTEM'',''OUTLN'',''DBSNMP'',''WMSYS'',''ORDSYS'',' ||
+        '''ORDPLUGINS'',''ORDDATA'',''MDSYS'',''CTXSYS'',''XDB'',''ANONYMOUS'',' ||
+        '''OLAPSYS'',''ODM'',''ODM_MTR'',''DMSYS'',''SYSMAN'',''EXFSYS'',' ||
+        '''TSMSYS'',''LBACSYS'',''PERFSTAT'',''SI_INFORMTN_SCHEMA'',''MDDATA'',' ||
+        '''SPATIAL_CSW_ADMIN_USR'',''SPATIAL_WFS_ADMIN_USR'',''OWBSYS'',' ||
+        '''APPQOSSYS'',''AUDSYS'',''GSMADMIN_INTERNAL'',''OJVMSYS'',''DVSYS'',' ||
+        '''DVF'',''GGSYS'',''REMOTE_SCHEDULER_AGENT'',''SYSBACKUP'',''SYSDG'',' ||
+        '''SYSKM'',''SYSRAC'',''SYS$UMF'',''DBSFWUSER'',''XS$NULL'',''FLOWS_FILES''';
+
     v_major    PLS_INTEGER;
     v_version  VARCHAR2(64);
     v_count    PLS_INTEGER;
@@ -73,6 +87,18 @@ DECLARE
         -- peine de decaler tous les champs a la lecture.
         emit('KV|' || p_key || '|' || REPLACE(NVL(p_val, '-'), '|', '/'));
     END kv;
+
+    -- Compte des objets et publie le resultat sous forme de preuve
+    -- structurelle. Une vue absente laisse simplement la cle non emise :
+    -- c'est le cas normal des options non installees.
+    PROCEDURE obj_dyn(p_key IN VARCHAR2, p_sql IN VARCHAR2) IS
+        l_n NUMBER;
+    BEGIN
+        EXECUTE IMMEDIATE p_sql INTO l_n;
+        emit('OBJ|' || p_key || '|' || TO_CHAR(NVL(l_n, 0)));
+    EXCEPTION
+        WHEN OTHERS THEN NULL;
+    END obj_dyn;
 
     -- Execute un SELECT scalaire et publie le resultat. Une vue ou une
     -- colonne absente laisse simplement la cle non emise.
@@ -288,6 +314,61 @@ BEGIN
             WHEN OTHERS THEN NULL;
         END;
     END IF;
+
+    -- ----------------------------------------------------------------
+    -- Preuves structurelles d'usage des options
+    --
+    -- Interrogation directe du dictionnaire, disponible depuis 8i. Deux
+    -- raisons d'en passer par la :
+    --
+    --   1. Sur Oracle 9i, DBA_FEATURE_USAGE_STATISTICS n'existe pas :
+    --      c'est la seule source d'usage exploitable.
+    --   2. Sur toutes les versions, c'est une preuve plus forte que
+    --      l'echantillonnage MMON, qui peut manquer un usage survenu
+    --      entre deux instantanes. Une table partitionnee existe ou
+    --      n'existe pas.
+    --
+    -- On ne retient que l'incontestable : un objet dont l'existence
+    -- meme suppose l'option. La compression de table en est exclue a
+    -- dessein -- BASIC est incluse, OLTP est payante, et la distinction
+    -- n'est lisible qu'a partir de 11g.
+    -- ----------------------------------------------------------------
+    obj_dyn('part_tables',
+        'SELECT COUNT(*) FROM dba_part_tables WHERE owner NOT IN (' || c_sys || ')');
+    obj_dyn('part_indexes',
+        'SELECT COUNT(*) FROM dba_part_indexes WHERE owner NOT IN (' || c_sys || ')');
+
+    -- Spatial : une colonne SDO_GEOMETRY dans un schema applicatif.
+    -- MDSYS est exclu, c'est le schema de l'option elle-meme.
+    obj_dyn('sdo_columns',
+        'SELECT COUNT(*) FROM dba_tab_columns WHERE data_type = ''SDO_GEOMETRY''' ||
+        ' AND owner NOT IN (' || c_sys || ')');
+
+    -- OLAP : espaces de travail analytiques.
+    obj_dyn('olap_aws',
+        'SELECT COUNT(*) FROM dba_aws WHERE owner NOT IN (' || c_sys || ')');
+
+    -- Label Security : une politique definie suppose l'option installee
+    -- et utilisee.
+    obj_dyn('ols_policies', 'SELECT COUNT(*) FROM dba_sa_policies');
+
+    -- Advanced Analytics : modeles de fouille de donnees (10g et suivants).
+    obj_dyn('mining_models',
+        'SELECT COUNT(*) FROM dba_mining_models WHERE owner NOT IN (' || c_sys || ')');
+
+    -- Database Vault : realms definis (10.2 et suivants).
+    obj_dyn('dv_realms', 'SELECT COUNT(*) FROM dba_dv_realm');
+
+    -- Advanced Security : colonnes chiffrees (TDE, 10.2 et suivants).
+    obj_dyn('encrypted_columns',
+        'SELECT COUNT(*) FROM dba_encrypted_columns WHERE owner NOT IN (' || c_sys || ')');
+    obj_dyn('encrypted_tablespaces',
+        'SELECT COUNT(*) FROM v$encrypted_tablespaces');
+
+    -- Real Application Clusters : plus d'une instance ouverte sur la
+    -- meme base. Emis en preuve structurelle, comme les autres, pour que
+    -- le moteur n'ait qu'un seul mecanisme a appliquer.
+    obj_dyn('rac_instances', 'SELECT COUNT(*) FROM gv$instance');
 
     -- Sentinelle : son absence signale un rapport tronque.
     kv('collect.sql_complete', '1');

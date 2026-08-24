@@ -19,6 +19,7 @@
 CACHE_DIR=/var/cache/oracle-licensing
 SQL_FILE=/usr/lib/oracle-licensing/collect_licensing.sql
 MAP_FILE=/etc/oracle-licensing/licensable-features.map
+EVIDENCE_FILE=/etc/oracle-licensing/structural-evidence.map
 AWK_FILE=/usr/lib/oracle-licensing/licensing_eval.awk
 ORATAB=/etc/oratab
 
