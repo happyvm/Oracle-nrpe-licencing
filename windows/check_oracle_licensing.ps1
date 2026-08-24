@@ -158,6 +158,16 @@ function Get-KVInt([string] $Key) {
     return 0
 }
 
+# INMEMORY_SIZE s'exprime en octets : 16 Go valent 17179869184, ce qui
+# deborde un entier 32 bits. [int]::TryParse y echouerait en rendant 0,
+# silencieusement -- et une base In-Memory passerait pour inactive.
+function Get-KVLong([string] $Key) {
+    $v = Get-KV $Key '0'
+    $n = [long]0
+    if ([long]::TryParse($v, [ref] $n)) { return $n }
+    return [long]0
+}
+
 $DbName     = Get-KV 'db.name' $Sid
 $Edition    = Get-KV 'db.edition' 'UNKNOWN'
 $DbVersion  = Get-KV 'inst.version' '0'
@@ -260,6 +270,28 @@ function Join-SortedKeys($Table) {
 # =====================================================================
 # Mode "options"
 # =====================================================================
+# Database In-Memory : payant, ou inclus au titre du Base Level ?
+#
+# Depuis 19.8 et en 21c, Oracle inclut en Enterprise Edition un Column
+# Store limite a 16 Go, active par INMEMORY_FORCE=BASE_LEVEL. Au-dela de
+# cette taille, ou sans ce reglage, l'usage releve de l'option payante.
+#
+# Une regle fondee sur le seul comptage de tables INMEMORY accuserait a
+# tort toute base utilisant le Base Level.
+function Get-InMemoryStatus {
+    $sz = Get-KVLong 'param.inmemory_size'
+    $tables = 0
+    if ($OBJV.ContainsKey('inmemory_tables')) {
+        [void][int]::TryParse($OBJV['inmemory_tables'], [ref] $tables)
+    }
+    if ($sz -le 0 -and $tables -le 0) { return 'none' }
+    $force = (Get-KV 'param.inmemory_force' '').ToUpper() -replace '[ \t]', ''
+    if ($force -eq 'BASE_LEVEL' -and $sz -le 17179869184 -and (Test-VersionGe $DbVersion '19.8')) {
+        return 'base_level'
+    }
+    return 'licensable'
+}
+
 # Nombre de PDB utilisateur incluses sans licence Multitenant.
 #
 # Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
@@ -384,6 +416,29 @@ function Invoke-ModeOptions {
     # Une option deja en infraction courante ne doit pas etre recomptee.
     foreach ($o in @($violNow.Keys))      { $violPast.Remove($o) }
     foreach ($o in @($wrongEdition.Keys)) { $violNow.Remove($o); $violPast.Remove($o); $covered.Remove($o) }
+
+    # Database In-Memory : croise deux parametres et la version, ce
+    # qu'une regle de la table des preuves ne saurait exprimer.
+    $imStat = Get-InMemoryStatus
+    if ($imStat -eq 'base_level') {
+        # Le releve d'usage remonte "In-Memory Column Store" des que le
+        # Column Store sert, sans distinguer le Base Level.
+        $freed['Database In-Memory'] = 1
+        $violNow.Remove('Database In-Memory')
+        $violPast.Remove('Database In-Memory')
+        $covered.Remove('Database In-Memory')
+        $detail.Remove('Database In-Memory')
+    } elseif ($imStat -eq 'licensable') {
+        $opt = 'Database In-Memory'
+        $entry = "`n    - Column Store actif : INMEMORY_SIZE={0}, INMEMORY_FORCE={1}, {2} table(s) INMEMORY [regle produit]" -f `
+                 (Get-KV 'param.inmemory_size' '0'), (Get-KV 'param.inmemory_force' '-'), `
+                 $(if ($OBJV.ContainsKey('inmemory_tables')) { $OBJV['inmemory_tables'] } else { '0' })
+        if ($detail.ContainsKey($opt)) { $detail[$opt] = $detail[$opt] + $entry }
+        else                           { $detail[$opt] = $entry }
+        if ($Edition -ne 'EE' -and $Edition -ne 'UNKNOWN') { $wrongEdition[$opt] = 1 }
+        elseif (Test-IsLicensed $opt)                      { $covered[$opt] = 1 }
+        else                                               { $violNow[$opt] = 1 }
+    }
 
     # Multitenant : traite ici plutot que par la table des features, son
     # seuil dependant de la version installee.

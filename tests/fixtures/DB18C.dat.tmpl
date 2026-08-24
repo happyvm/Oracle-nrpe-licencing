@@ -1,0 +1,52 @@
+# Oracle 18c : techniquement 12.2.0.2 renumerote. Les regles de licence
+# y sont celles de 12.2 -- UNE seule PDB incluse, Privilege Analysis
+# encore rattache a Database Vault -- alors que le numero 18 pourrait
+# faire croire a une parente avec 19c.
+#
+# Cette base a 2 PDB : Multitenant est donc requis ici, alors que la
+# meme configuration serait incluse en 19c.
+KV|collect.version|1.1.0
+KV|collect.epoch|@EPOCH@
+KV|collect.date|@DATE@
+KV|inst.sid|DB18C
+KV|inst.oracle_home|/u01/app/oracle/product/18.0.0/dbhome_1
+KV|inst.running|1
+KV|host.name|srvora-18c.example.lan
+KV|host.arch|x86_64
+KV|host.cpu.sockets|2
+KV|host.cpu.cores|20
+KV|host.cpu.threads|40
+KV|host.cpu.reliable|1
+KV|host.virt|none
+KV|host.core_factor|0.5
+KV|host.processor_licenses|10
+KV|inst.version|18.0.0.0.0
+KV|db.version_major|18
+KV|collect.cap.feature_usage|1
+KV|collect.cap.hwm|1
+KV|collect.cap.osstat_cores|1
+KV|collect.cap.multitenant|1
+KV|db.name|DB18C
+KV|db.dbid|889900112
+KV|db.role|PRIMARY
+KV|db.open_mode|READ WRITE
+KV|db.edition|EE
+KV|db.cdb|YES
+KV|db.pdb_count|2
+KV|db.rac_instances|1
+KV|param.control_management_pack_access|NONE
+KV|param.inmemory_size|0
+KV|param.heat_map|OFF
+KV|license.sessions_current|60
+KV|license.sessions_highwater|420
+KV|license.sessions_max|0
+KV|collect.status|ok
+OPT|Partitioning|TRUE
+FEAT|Partitioning (user)|TRUE|600|2026-08-18|2019-01-15|5
+OBJ|part_tables|5
+OBJ|part_indexes|13
+OBJ|sdo_columns|4
+OBJ|priv_captures|2
+OBJ|inmemory_tables|0
+OBJ|rac_instances|1
+HWM|SESSIONS|420|60

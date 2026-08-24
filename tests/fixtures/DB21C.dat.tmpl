@@ -1,0 +1,53 @@
+# Oracle 21c : trois PDB incluses comme en 19c, et surtout Column Store
+# au "Base Level" -- inclus en Enterprise Edition jusqu'a 16 Go depuis
+# 19.8, active par INMEMORY_FORCE=BASE_LEVEL.
+#
+# Une regle fondee sur le seul comptage de tables INMEMORY accuserait a
+# tort cette base : elle utilise In-Memory sans devoir l'option.
+KV|collect.version|1.1.0
+KV|collect.epoch|@EPOCH@
+KV|collect.date|@DATE@
+KV|inst.sid|DB21C
+KV|inst.oracle_home|/u01/app/oracle/product/21.0.0/dbhome_1
+KV|inst.running|1
+KV|host.name|srvora-21c.example.lan
+KV|host.arch|x86_64
+KV|host.cpu.sockets|2
+KV|host.cpu.cores|32
+KV|host.cpu.threads|64
+KV|host.cpu.reliable|1
+KV|host.virt|none
+KV|host.core_factor|0.5
+KV|host.processor_licenses|16
+KV|inst.version|21.3.0.0.0
+KV|db.version_major|21
+KV|collect.cap.feature_usage|1
+KV|collect.cap.hwm|1
+KV|collect.cap.osstat_cores|1
+KV|collect.cap.multitenant|1
+KV|db.name|DB21C
+KV|db.dbid|101112131
+KV|db.role|PRIMARY
+KV|db.open_mode|READ WRITE
+KV|db.edition|EE
+KV|db.cdb|YES
+KV|db.pdb_count|3
+KV|db.rac_instances|1
+KV|param.control_management_pack_access|NONE
+KV|param.inmemory_size|8589934592
+KV|param.inmemory_force|BASE_LEVEL
+KV|param.heat_map|OFF
+KV|license.sessions_current|200
+KV|license.sessions_highwater|1500
+KV|license.sessions_max|0
+KV|collect.status|ok
+OPT|Partitioning|TRUE
+FEAT|Partitioning (user)|TRUE|400|2026-08-20|2022-04-01|3
+FEAT|In-Memory Column Store|TRUE|400|2026-08-20|2022-04-01|0
+OBJ|part_tables|6
+OBJ|part_indexes|14
+OBJ|inmemory_tables|9
+OBJ|priv_captures|1
+OBJ|sdo_columns|0
+OBJ|rac_instances|1
+HWM|SESSIONS|1500|200

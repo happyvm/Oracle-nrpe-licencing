@@ -63,15 +63,17 @@ CORE_FACTOR=""
 # depuis ce qui est observe en base -- sinon le controle valide la
 # derive au lieu de la detecter.
 #
-# Libelles reconnus (champ 2 de licensable-features.map) :
-#   Partitioning, Diagnostics Pack, Tuning Pack, Advanced Compression,
-#   Advanced Security, Real Application Clusters, RAC One Node,
-#   Active Data Guard, Real Application Testing, Multitenant,
-#   Database In-Memory, Label Security, Database Vault, OLAP,
-#   Spatial and Graph, Advanced Analytics, GoldenGate,
-#   Change Management Pack, Configuration Management Pack,
-#   Data Masking and Subsetting Pack, Lifecycle Management Pack,
-#   Cloud Management Pack
+# Libelles reconnus. Cette liste correspond au champ 2 des deux tables
+# de correspondance, plus les options traitees par la regle produit du
+# moteur (Multitenant). Un libelle mal orthographie n'est pas signale :
+# l'option passera simplement pour non detenue.
+#   Active Data Guard, Advanced Analytics, Advanced Compression,
+#   Advanced Security, Change Management Pack, Cloud Management Pack,
+#   Configuration Management Pack, Data Masking and Subsetting Pack,
+#   Database In-Memory, Database Vault, Diagnostics Pack, GoldenGate,
+#   Label Security, Lifecycle Management Pack, Multitenant, OLAP,
+#   Partitioning, RAC One Node, Real Application Clusters,
+#   Real Application Testing, Spatial and Graph, Tuning Pack
 # =====================================================================
 LICENSED_OPTIONS="Partitioning,Diagnostics Pack,Tuning Pack"
 

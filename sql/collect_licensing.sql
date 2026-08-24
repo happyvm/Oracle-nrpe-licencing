@@ -221,6 +221,13 @@ BEGIN
     kv_dyn('param.inmemory_size',
         'SELECT value FROM v$parameter WHERE name = ''inmemory_size''');
 
+    -- INMEMORY_FORCE a BASE_LEVEL active le niveau de base du Column
+    -- Store, inclus en Enterprise Edition depuis 19.8 et en 21c dans la
+    -- limite de 16 Go. Sans ce parametre, tout usage d'In-Memory releve
+    -- de l'option payante : la distinction se joue ici.
+    kv_dyn('param.inmemory_force',
+        'SELECT value FROM v$parameter WHERE name = ''inmemory_force''');
+
     -- HEAT_MAP a ON alimente le suivi ILM, rattache a Advanced
     -- Compression (12.1 et suivants).
     kv_dyn('param.heat_map',

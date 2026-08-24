@@ -213,6 +213,29 @@ function packs_exposed(value, arr,    v, n) {
     return n
 }
 
+# Database In-Memory : payant, ou inclus au titre du Base Level ?
+#
+# Depuis 19.8 et en 21c, Oracle inclut en Enterprise Edition un Column
+# Store limite a 16 Go, active par INMEMORY_FORCE=BASE_LEVEL. Au-dela de
+# cette taille, ou sans ce reglage, l'usage releve de l'option payante.
+#
+# Une regle fondee sur le seul comptage de tables INMEMORY accuserait a
+# tort toute base utilisant le Base Level -- meme categorie d'erreur que
+# le seuil Multitenant fixe.
+#
+# INMEMORY_SIZE est exprime en octets : 16 Go valent 17179869184, ce qui
+# depasse un entier 32 bits. awk travaille en flottant double, la
+# precision est donc suffisante.
+function inmemory_status(    sz, force) {
+    sz = kv["param.inmemory_size"] + 0
+    if (sz <= 0 && (objv["inmemory_tables"] + 0) <= 0) return "none"
+    force = toupper(kv["param.inmemory_force"])
+    gsub(/[ \t]/, "", force)
+    if (force == "BASE_LEVEL" && sz <= 17179869184 && version_ge(version, "19.8"))
+        return "base_level"
+    return "licensable"
+}
+
 # Nombre de PDB utilisateur incluses sans licence Multitenant.
 #
 # Oracle a fait evoluer cette limite : une seule PDB de 12.1 a 18c,
@@ -231,7 +254,7 @@ function multitenant_included(    v) {
 
 function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
                           status, label, parts, np, stale, o, grp, msg,
-                          cnt, nstruct, partial, cmpa, n_exp, npdb) {
+                          cnt, nstruct, partial, cmpa, n_exp, npdb, imstat) {
     if (nrules == 0) {
         printf "UNKNOWN - table de correspondance vide ou illisible\n"
         return UNKNOWN
@@ -315,6 +338,32 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
     # Une option deja en infraction courante ne doit pas etre recomptee.
     for (o in viol_now)      delete viol_past[o]
     for (o in wrong_edition) { delete viol_now[o]; delete viol_past[o]; delete covered[o] }
+
+    # ------------------------------------------------------------------
+    # Database In-Memory : croise deux parametres et la version, ce
+    # qu'une regle de la table des preuves ne saurait exprimer.
+    # ------------------------------------------------------------------
+    imstat = inmemory_status()
+    if (imstat == "base_level") {
+        # Le releve d'usage remonte "In-Memory Column Store" des que le
+        # Column Store sert, sans distinguer le Base Level. Ce constat
+        # doit donc etre retire, sinon la table des features accuserait
+        # une base qui n'a rien a licencier.
+        freed["Database In-Memory"] = 1
+        delete viol_now["Database In-Memory"]
+        delete viol_past["Database In-Memory"]
+        delete covered["Database In-Memory"]
+        delete detail["Database In-Memory"]
+    } else if (imstat == "licensable") {
+        opt = "Database In-Memory"
+        detail[opt] = detail[opt] sprintf("\n    - Column Store actif : INMEMORY_SIZE=%s, INMEMORY_FORCE=%s, %d table(s) INMEMORY [regle produit]", \
+                      (kv["param.inmemory_size"] != "" ? kv["param.inmemory_size"] : "0"), \
+                      (kv["param.inmemory_force"] != "" ? kv["param.inmemory_force"] : "-"), \
+                      objv["inmemory_tables"] + 0)
+        if (edition != "EE" && edition != "UNKNOWN") wrong_edition[opt] = 1
+        else if (is_licensed(opt))                   covered[opt] = 1
+        else                                         viol_now[opt] = 1
+    }
 
     # ------------------------------------------------------------------
     # Multitenant : traite ici plutot que par la table des features,
