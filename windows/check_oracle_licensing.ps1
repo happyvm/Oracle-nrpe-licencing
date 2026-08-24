@@ -259,6 +259,25 @@ function Join-SortedKeys($Table) {
 # =====================================================================
 # Mode "options"
 # =====================================================================
+# Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
+#
+# Ce parametre (11.1 et suivants) commande l'acces aux management packs.
+# Sa valeur par defaut en Enterprise Edition est DIAGNOSTIC+TUNING : une
+# base neuve autorise donc leur usage, meme sans les avoir achetes.
+#
+# Une base exposee n'est pas une base en infraction : c'est une porte
+# ouverte, pas un usage constate. D'ou une categorie distincte, en
+# WARNING, qui laisse le CRITICAL aux usages averes.
+function Get-ExposedPacks([string] $Value) {
+    $out = @{}
+    if (-not $Value) { return $out }
+    $v = $Value.ToUpper() -replace '[ \t]', ''
+    if ($v -eq '' -or $v -eq 'NONE') { return $out }
+    if ($v -eq 'DIAGNOSTIC' -or $v -eq 'DIAGNOSTIC+TUNING') { $out['Diagnostics Pack'] = 1 }
+    if ($v -eq 'DIAGNOSTIC+TUNING')                          { $out['Tuning Pack'] = 1 }
+    return $out
+}
+
 function Invoke-ModeOptions {
     $violNow = @{}; $violPast = @{}; $covered = @{}; $freed = @{}; $wrongEdition = @{}
     $detail  = @{}
@@ -346,15 +365,27 @@ function Invoke-ModeOptions {
     foreach ($o in @($violNow.Keys))      { $violPast.Remove($o) }
     foreach ($o in @($wrongEdition.Keys)) { $violNow.Remove($o); $violPast.Remove($o); $covered.Remove($o) }
 
+    # Exposition aux management packs : on ne signale que ce qui n'est
+    # pas deja constate ailleurs.
+    $cmpa = Get-KV 'param.control_management_pack_access' ''
+    $exposed = Get-ExposedPacks $cmpa
+    foreach ($o in @($exposed.Keys)) {
+        if ((Test-IsLicensed $o) -or $violNow.ContainsKey($o) -or
+            $violPast.ContainsKey($o) -or $wrongEdition.ContainsKey($o)) {
+            $exposed.Remove($o)
+        }
+    }
+
     $nNow  = $violNow.Count
     $nPast = $violPast.Count
     if ($IgnoreHistorical) { $nPast = 0 }
     $nCov  = $covered.Count
     $nEdt  = $wrongEdition.Count
+    $nExp  = $exposed.Count
 
     $status = $OK; $label = 'OK'
-    if ($nEdt -gt 0 -or $nNow -gt 0) { $status = $CRITICAL; $label = 'CRITICAL' }
-    elseif ($nPast -gt 0)            { $status = $WARNING;  $label = 'WARNING' }
+    if ($nEdt -gt 0 -or $nNow -gt 0)      { $status = $CRITICAL; $label = 'CRITICAL' }
+    elseif ($nPast -gt 0 -or $nExp -gt 0) { $status = $WARNING;  $label = 'WARNING' }
 
     # Un cache perime rend le verdict caduc, sans masquer une infraction
     # deja constatee.
@@ -368,6 +399,7 @@ function Invoke-ModeOptions {
     if ($nEdt  -gt 0) { $parts += ("{0} option(s) incompatible(s) avec l'edition {1}: {2}" -f $nEdt, $Edition, (Join-SortedKeys $wrongEdition)) }
     if ($nNow  -gt 0) { $parts += ("{0} option(s) non licenciee(s) en cours d'utilisation: {1}" -f $nNow, (Join-SortedKeys $violNow)) }
     if ($nPast -gt 0) { $parts += ("{0} option(s) non licenciee(s) avec usage historique: {1}" -f $nPast, (Join-SortedKeys $violPast)) }
+    if ($nExp  -gt 0) { $parts += ("{0} pack(s) accessible(s) sans licence declaree (CONTROL_MANAGEMENT_PACK_ACCESS={1}): {2}" -f $nExp, $cmpa, (Join-SortedKeys $exposed)) }
     if ($parts.Length -eq 0) { $parts += ("aucune derive detectee sur {0} option(s) declaree(s)" -f $nCov) }
 
     # Sans DBA_FEATURE_USAGE_STATISTICS (avant Oracle 10.1), seules les
@@ -378,14 +410,20 @@ function Invoke-ModeOptions {
         $partial = " [couverture partielle: analyse structurelle seule, releve d'usage absent avant Oracle 10.1]"
     }
 
-    Write-Output ("{0} - {1}/{2} ({3} {4}): {5}{6}{13}|unlicensed_now={7};;1;0 unlicensed_past={8};1;;0 wrong_edition={9};;1;0 licensed_used={10};;;0 cache_age={11}s;;{12};0" -f `
+    Write-Output ("{0} - {1}/{2} ({3} {4}): {5}{6}{13}|unlicensed_now={7};;1;0 unlicensed_past={8};1;;0 wrong_edition={9};;1;0 exposed_packs={14};1;;0 licensed_used={10};;;0 cache_age={11}s;;{12};0" -f `
         $label, $DbName, $Sid, $Edition, $DbVersion, ($parts -join '; '), $stale, `
-        $nNow, $nPast, $nEdt, $nCov, $Age, $MaxCacheAge, $partial)
+        $nNow, $nPast, $nEdt, $nCov, $Age, $MaxCacheAge, $partial, $nExp)
 
     if ($Detail -or $status -ne $OK) {
         if ($nEdt  -gt 0) { Write-Group "Options incompatibles avec l'edition installee :" $wrongEdition $detail }
         if ($nNow  -gt 0) { Write-Group "Options utilisees SANS licence declaree :" $violNow $detail }
         if ($nPast -gt 0) { Write-Group "Options non licenciees, usage historique uniquement :" $violPast $detail }
+        if ($nExp -gt 0) {
+            Write-Output 'Packs accessibles sans licence declaree (aucun usage constate a ce jour) :'
+            foreach ($o in ($exposed.Keys | Sort-Object)) { Write-Output ("  {0}" -f $o) }
+            Write-Output ("  CONTROL_MANAGEMENT_PACK_ACCESS={0} autorise leur usage a tout moment." -f $cmpa)
+            Write-Output '  Si ces packs ne sont pas detenus, positionnez le parametre a NONE.'
+        }
         if ($Detail -and $nCov -gt 0) { Write-Group "Options couvertes par la declaration :" $covered $detail }
         if ($Detail -and $freed.Count -gt 0) {
             Write-Output ("Features payantes par le passe, incluses en {0} : {1}" -f $DbVersion, (Join-SortedKeys $freed))

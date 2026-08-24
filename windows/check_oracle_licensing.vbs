@@ -471,6 +471,25 @@ Function IsLicensed(sOption)
     Next
 End Function
 
+' Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
+'
+' Ce parametre (11.1 et suivants) commande l'acces aux management packs.
+' Sa valeur par defaut en Enterprise Edition est DIAGNOSTIC+TUNING : une
+' base neuve autorise donc leur usage, meme sans les avoir achetes.
+'
+' Une base exposee n'est pas une base en infraction : c'est une porte
+' ouverte, pas un usage constate. D'ou une categorie distincte, en
+' WARNING, qui laisse le CRITICAL aux usages averes.
+Function ExposedPacks(sValue)
+    Dim oOut, v
+    Set oOut = CreateObject("Scripting.Dictionary")
+    Set ExposedPacks = oOut
+    v = UCase(Replace(Replace(Trim(sValue & ""), " ", ""), vbTab, ""))
+    If v = "" Or v = "NONE" Then Exit Function
+    If v = "DIAGNOSTIC" Or v = "DIAGNOSTIC+TUNING" Then oOut("Diagnostics Pack") = 1
+    If v = "DIAGNOSTIC+TUNING" Then oOut("Tuning Pack") = 1
+End Function
+
 ' =====================================================================
 ' Mode "options" : detection de derive de conformite.
 '
@@ -486,8 +505,8 @@ Function ModeOptions()
     Dim oViolNow, oViolPast, oCovered, oFreed, oWrongEd, oDetail
     Dim aFeat, i, r, sFeature, nDet, sUsed, nAux, nMatched
     Dim oRe, sOpt, sNote, sFirst, sLast, sEntry
-    Dim nNow, nPast, nCov, nEdt, nStatus, sLabel, sStale, sMsg, sPartial
-    Dim aKeys, k, e, nCnt
+    Dim nNow, nPast, nCov, nEdt, nExp, nStatus, sLabel, sStale, sMsg, sPartial
+    Dim aKeys, k, e, nCnt, oExposed, sCmpa
 
     Set oViolNow  = CreateObject("Scripting.Dictionary")
     Set oViolPast = CreateObject("Scripting.Dictionary")
@@ -606,16 +625,29 @@ Function ModeOptions()
         If oCovered.Exists(aKeys(i))  Then oCovered.Remove aKeys(i)
     Next
 
+    ' Exposition aux management packs : on ne signale que ce qui n'est
+    ' pas deja constate ailleurs.
+    sCmpa = GetKV("param.control_management_pack_access", "")
+    Set oExposed = ExposedPacks(sCmpa)
+    aKeys = oExposed.Keys
+    For i = 0 To UBound(aKeys)
+        If IsLicensed(aKeys(i)) Or oViolNow.Exists(aKeys(i)) Or _
+           oViolPast.Exists(aKeys(i)) Or oWrongEd.Exists(aKeys(i)) Then
+            oExposed.Remove aKeys(i)
+        End If
+    Next
+
     nNow = oViolNow.Count
     nPast = oViolPast.Count
     If gIgnoreHistorical Then nPast = 0
     nCov = oCovered.Count
     nEdt = oWrongEd.Count
+    nExp = oExposed.Count
 
     nStatus = OK_ : sLabel = "OK"
     If nEdt > 0 Or nNow > 0 Then
         nStatus = CRITICAL_ : sLabel = "CRITICAL"
-    ElseIf nPast > 0 Then
+    ElseIf nPast > 0 Or nExp > 0 Then
         nStatus = WARNING_ : sLabel = "WARNING"
     End If
 
@@ -639,6 +671,11 @@ Function ModeOptions()
         If Len(sMsg) > 0 Then sMsg = sMsg & "; "
         sMsg = sMsg & nPast & " option(s) non licenciee(s) avec usage historique: " & JoinSorted(oViolPast)
     End If
+    If nExp > 0 Then
+        If Len(sMsg) > 0 Then sMsg = sMsg & "; "
+        sMsg = sMsg & nExp & " pack(s) accessible(s) sans licence declaree (CONTROL_MANAGEMENT_PACK_ACCESS=" & _
+               sCmpa & "): " & JoinSorted(oExposed)
+    End If
     If Len(sMsg) = 0 Then
         sMsg = "aucune derive detectee sur " & nCov & " option(s) declaree(s)"
     End If
@@ -653,13 +690,22 @@ Function ModeOptions()
 
     WScript.Echo sLabel & " - " & gDbName & "/" & gSid & " (" & gEdition & " " & gDbVersion & "): " & _
         sMsg & sStale & sPartial & "|unlicensed_now=" & nNow & ";;1;0 unlicensed_past=" & nPast & _
-        ";1;;0 wrong_edition=" & nEdt & ";;1;0 licensed_used=" & nCov & _
+        ";1;;0 wrong_edition=" & nEdt & ";;1;0 exposed_packs=" & nExp & ";1;;0 licensed_used=" & nCov & _
         ";;;0 cache_age=" & gAge & "s;;" & gMaxCacheAge & ";0"
 
     If gDetail Or nStatus <> OK_ Then
         If nEdt > 0  Then EchoGroup "Options incompatibles avec l'edition installee :", oWrongEd, oDetail
         If nNow > 0  Then EchoGroup "Options utilisees SANS licence declaree :", oViolNow, oDetail
         If nPast > 0 Then EchoGroup "Options non licenciees, usage historique uniquement :", oViolPast, oDetail
+        If nExp > 0 Then
+            WScript.Echo "Packs accessibles sans licence declaree (aucun usage constate a ce jour) :"
+            aKeys = SortedKeys(oExposed)
+            For i = 0 To UBound(aKeys)
+                WScript.Echo "  " & aKeys(i)
+            Next
+            WScript.Echo "  CONTROL_MANAGEMENT_PACK_ACCESS=" & sCmpa & " autorise leur usage a tout moment."
+            WScript.Echo "  Si ces packs ne sont pas detenus, positionnez le parametre a NONE."
+        End If
         If gDetail And nCov > 0 Then EchoGroup "Options couvertes par la declaration :", oCovered, oDetail
         If gDetail And oFreed.Count > 0 Then
             WScript.Echo "Features payantes par le passe, incluses en " & gDbVersion & " : " & JoinSorted(oFreed)

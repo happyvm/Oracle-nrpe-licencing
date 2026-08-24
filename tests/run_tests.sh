@@ -202,6 +202,32 @@ mkcache ORCL 300
 assert_rc 0 "19c : la meme Spatial est gratuite" -s ORCL -m options \
     --licensed-options "Partitioning,Diagnostics Pack,Multitenant,Advanced Compression,Tuning Pack"
 
+echo "== Oracle 11g : exposition aux management packs =="
+mkcache DB11G 300
+# CONTROL_MANAGEMENT_PACK_ACCESS vaut DIAGNOSTIC+TUNING par defaut en EE :
+# une base neuve autorise les packs sans qu'ils soient achetes. C'est une
+# porte ouverte, pas un usage constate -- donc WARNING, pas CRITICAL.
+assert_rc 1 "11g : packs accessibles seuls -> WARNING" -s DB11G -m options \
+    --licensed-options "Partitioning,Advanced Compression"
+assert_out 'CONTROL_MANAGEMENT_PACK_ACCESS' "11g : le parametre en cause est nomme" \
+    -s DB11G -m options --licensed-options "Partitioning,Advanced Compression"
+assert_out 'positionnez le parametre a NONE' "11g : la remediation est donnee" \
+    -s DB11G -m options --licensed-options "Partitioning,Advanced Compression"
+assert_out 'exposed_packs=2' "11g : l'exposition est chiffree en perfdata" \
+    -s DB11G -m options --licensed-options "Partitioning,Advanced Compression"
+# Packs declares : plus d'exposition a signaler.
+assert_rc 0 "11g : packs declares -> OK" -s DB11G -m options \
+    --licensed-options "Partitioning,Advanced Compression,Diagnostics Pack,Tuning Pack"
+# Un usage avere prime sur la simple exposition.
+assert_rc 2 "11g : usage avere -> CRITICAL malgre l'exposition" -s DB11G -m options
+
+echo "== Oracle 11g : preuves propres a la version =="
+# Advanced Compression n'apparait dans aucun releve d'usage ici : seules
+# les preuves structurelles la revelent. C'est tout l'interet du recoupement.
+assert_out 'oltp_compressed_tables' "11g : compression OLTP detectee" -s DB11G -m options
+assert_out 'securefile_compressed'  "11g : LOB SecureFile compresses detectes" -s DB11G -m options
+assert_out 'Advanced Compression'   "11g : rattachee a la bonne option" -s DB11G -m options
+
 echo "== Robustesse =="
 assert_rc 3 "SID inconnu -> UNKNOWN"   -s NOPE -m options
 assert_rc 3 "mode inconnu -> UNKNOWN"  -s ORCL -m bidon

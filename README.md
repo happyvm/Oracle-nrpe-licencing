@@ -136,8 +136,14 @@ sait quoi corriger sans se reconnecter à la base.
 | Statut | Cas |
 |---|---|
 | CRITICAL | option non détenue **en cours d'utilisation**, ou option inutilisable dans l'édition installée |
-| WARNING | option non détenue dont l'usage est **seulement historique** |
+| WARNING | option non détenue dont l'usage est **seulement historique**, ou management pack **accessible** sans licence déclarée |
 | OK | usage couvert, ou feature devenue gratuite dans cette version |
+
+Sur Oracle 11.1 et au-delà, `CONTROL_MANAGEMENT_PACK_ACCESS` vaut
+`DIAGNOSTIC+TUNING` par défaut en Enterprise Edition : une base neuve
+autorise les management packs même sans les avoir achetés. Le plugin
+signale cette **exposition** en WARNING (`exposed_packs`) — une porte
+ouverte n'est pas un usage constaté — et indique la remédiation.
 
 La distinction courant / historique évite de traiter au même niveau
 d'urgence un `SQL Tuning Advisor` lancé une fois en 2021 et un

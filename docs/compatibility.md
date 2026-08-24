@@ -179,13 +179,46 @@ comme sous Linux.
 
 ## Oracle Database
 
-| Version | Usage options | HWM | Cœurs `V$OSSTAT` | Multitenant | Statut |
-|---|---|---|---|---|---|
-| 9.2 | **non** | non | non | non | dégradé — voir limite 1 |
-| 10.1 / 10.2 | oui | oui | non | non | supporté |
-| 11.1 / 11.2 | oui | oui | oui | non | supporté |
-| 12.1 / 12.2 | oui | oui | oui | oui | supporté |
-| 18c / 19c | oui | oui | oui | oui | supporté |
+| Version | Relevé d'usage | HWM | Cœurs `V$OSSTAT` | Packs contrôlables | Multitenant | Statut |
+|---|---|---|---|---|---|---|
+| 9.2 | non | non | non | non | non | partiel — preuves structurelles seules |
+| 10.1 / 10.2 | oui | oui | non | non | non | supporté |
+| 11.1 / 11.2 | oui | oui | oui | **oui** | non | supporté |
+| 12.1 / 12.2 | oui | oui | oui | oui | oui | supporté |
+| 18c / 19c | oui | oui | oui | oui | oui | supporté |
+
+### Ce qui distingue 10g de 11g
+
+**`CONTROL_MANAGEMENT_PACK_ACCESS` (11.1+).** Ce paramètre commande
+l'accès aux management packs Diagnostics et Tuning. Sa valeur par défaut
+en Enterprise Edition est `DIAGNOSTIC+TUNING` : **une base neuve autorise
+leur usage même si le client ne les a pas achetés.** Oracle recommande
+`NONE` dans ce cas.
+
+Le plugin le contrôle et signale les packs accessibles non déclarés en
+**WARNING**, sous la métrique `exposed_packs` — une porte ouverte n'est
+pas un usage constaté, et le CRITICAL reste réservé aux usages avérés.
+La sortie longue donne la remédiation.
+
+Sur 10g le paramètre n'existe pas : les packs y étaient contrôlés par
+Enterprise Manager, sans trace exploitable en base. Seul le relevé
+d'usage les révèle.
+
+**Preuves structurelles propres à 11.1+ :**
+
+| Preuve | Option | Pourquoi pas avant 11.1 |
+|---|---|---|
+| `oltp_compressed_tables` | Advanced Compression | `COMPRESS_FOR` n'existe pas avant : BASIC (incluse) et OLTP (payante) sont indiscernables |
+| `hcc_compressed_tables` | Advanced Compression | idem ; incluse sur Exadata, ZFSSA et Pillar — à vérifier à la main |
+| `securefile_compressed` / `_deduplicated` | Advanced Compression | SecureFiles apparaît en 11.1 |
+| `securefile_encrypted` | Advanced Security | idem |
+| `adg_readonly_apply` | Active Data Guard | l'option apparaît en 11.1 |
+| `flashback_archives` | Advanced Compression | Total Recall en 11g, inclus depuis 12.1.0.2 |
+
+Sur 9i et 10g, le collecteur n'émet pas ces clés et les règles restent
+sans effet : pas de faux positif, mais pas de détection non plus. La
+compression payante y est indétectable de façon fiable — c'est une
+limite assumée plutôt qu'un constat que l'on ne saurait étayer.
 
 Vues apparues au fil des versions :
 

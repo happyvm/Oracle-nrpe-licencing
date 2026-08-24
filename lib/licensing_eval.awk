@@ -190,9 +190,32 @@ END {
 #   WARNING   option non detenue dont l'usage est seulement historique
 #   OK        usage couvert, ou feature devenue gratuite dans la version
 # =====================================================================
+# Packs exposes par CONTROL_MANAGEMENT_PACK_ACCESS.
+#
+# Ce parametre (11.1 et suivants) commande l'acces aux management packs.
+# Sa valeur par defaut en Enterprise Edition est DIAGNOSTIC+TUNING : une
+# base neuve autorise donc leur usage, meme sans les avoir achetes.
+# Oracle recommande NONE dans ce cas.
+#
+# Une base exposee n'est pas une base en infraction : c'est une porte
+# ouverte, pas un usage constate. D'ou une categorie distincte, en
+# WARNING, qui laisse le CRITICAL aux usages averes.
+#
+# La correspondance est une regle du produit Oracle, pas une donnee
+# susceptible d'evoluer avec le contrat : elle reste dans le code.
+function packs_exposed(value, arr,    v, n) {
+    n = 0
+    v = toupper(value)
+    gsub(/[ \t]/, "", v)
+    if (v == "" || v == "NONE") return 0
+    if (v == "DIAGNOSTIC" || v == "DIAGNOSTIC+TUNING") { arr["Diagnostics Pack"] = 1; n++ }
+    if (v == "DIAGNOSTIC+TUNING")                      { arr["Tuning Pack"] = 1;      n++ }
+    return n
+}
+
 function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
                           status, label, parts, np, stale, o, grp, msg,
-                          cnt, nstruct, partial) {
+                          cnt, nstruct, partial, cmpa, n_exp) {
     if (nrules == 0) {
         printf "UNKNOWN - table de correspondance vide ou illisible\n"
         return UNKNOWN
@@ -277,14 +300,29 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
     for (o in viol_now)      delete viol_past[o]
     for (o in wrong_edition) { delete viol_now[o]; delete viol_past[o]; delete covered[o] }
 
+    # ------------------------------------------------------------------
+    # Exposition aux management packs (11.1 et suivants).
+    #
+    # On ne signale que ce qui n'est pas deja constate : une option deja
+    # en infraction n'a pas besoin d'etre annoncee comme "exposee".
+    # ------------------------------------------------------------------
+    cmpa = kv["param.control_management_pack_access"]
+    if (packs_exposed(cmpa, exposed) > 0) {
+        for (o in exposed) {
+            if (is_licensed(o) || (o in viol_now) || (o in viol_past) || (o in wrong_edition))
+                delete exposed[o]
+        }
+    }
+
     n_now = count_keys(viol_now)
     n_past = (ignore_historical ? 0 : count_keys(viol_past))
     n_cov = count_keys(covered)
     n_edt = count_keys(wrong_edition)
+    n_exp = count_keys(exposed)
 
     status = OK; label = "OK"
-    if (n_edt > 0 || n_now > 0)  { status = CRITICAL; label = "CRITICAL" }
-    else if (n_past > 0)         { status = WARNING;  label = "WARNING"  }
+    if (n_edt > 0 || n_now > 0)      { status = CRITICAL; label = "CRITICAL" }
+    else if (n_past > 0 || n_exp > 0) { status = WARNING;  label = "WARNING"  }
 
     # Un cache perime rend le verdict caduc, sans masquer une infraction
     # deja constatee.
@@ -301,6 +339,8 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
         { msg = msg (np++ ? "; " : "") sprintf("%d option(s) non licenciee(s) en cours d'utilisation: %s", n_now, join_sorted(viol_now)) }
     if (n_past > 0)
         { msg = msg (np++ ? "; " : "") sprintf("%d option(s) non licenciee(s) avec usage historique: %s", n_past, join_sorted(viol_past)) }
+    if (n_exp > 0)
+        { msg = msg (np++ ? "; " : "") sprintf("%d pack(s) accessible(s) sans licence declaree (CONTROL_MANAGEMENT_PACK_ACCESS=%s): %s", n_exp, cmpa, join_sorted(exposed)) }
     if (np == 0)
         { msg = sprintf("aucune derive detectee sur %d option(s) declaree(s)", n_cov) }
 
@@ -312,14 +352,20 @@ function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
         partial = " [couverture partielle: analyse structurelle seule, releve d'usage absent avant Oracle 10.1]"
 
     printf "%s - %s/%s (%s %s): %s%s%s", label, db_name, sid, edition, version, msg, stale, partial
-    printf "|unlicensed_now=%d;;1;0 unlicensed_past=%d;1;;0 wrong_edition=%d;;1;0 licensed_used=%d;;;0 cache_age=%ds;;%d;0\n", \
-           n_now, n_past, n_edt, n_cov, age, max_cache_age
+    printf "|unlicensed_now=%d;;1;0 unlicensed_past=%d;1;;0 wrong_edition=%d;;1;0 exposed_packs=%d;1;;0 licensed_used=%d;;;0 cache_age=%ds;;%d;0\n", \
+           n_now, n_past, n_edt, n_exp, n_cov, age, max_cache_age
 
     # Sortie longue : elle permet au DBA d'agir sans se reconnecter.
     if (verbose || status != OK) {
         if (n_edt > 0)  print_group("Options incompatibles avec l'edition installee :", wrong_edition)
         if (n_now > 0)  print_group("Options utilisees SANS licence declaree :", viol_now)
         if (n_past > 0) print_group("Options non licenciees, usage historique uniquement :", viol_past)
+        if (n_exp > 0) {
+            printf "Packs accessibles sans licence declaree (aucun usage constate a ce jour) :\n"
+            for (o in exposed) printf "  %s\n", o
+            printf "  CONTROL_MANAGEMENT_PACK_ACCESS=%s autorise leur usage a tout moment.\n", cmpa
+            printf "  Si ces packs ne sont pas detenus, positionnez le parametre a NONE.\n"
+        }
         if (verbose && n_cov > 0) print_group("Options couvertes par la declaration :", covered)
         if (verbose && count_keys(freed) > 0)
             printf "Features payantes par le passe, incluses en %s : %s\n", version, join_sorted(freed)

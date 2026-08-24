@@ -201,6 +201,20 @@ BEGIN
     END IF;
     kv_dyn('param.cpu_count', 'SELECT value FROM v$parameter WHERE name = ''cpu_count''');
 
+    -- CONTROL_MANAGEMENT_PACK_ACCESS (11.1 et suivants) commande l'acces
+    -- aux management packs Diagnostics et Tuning. Sa valeur par defaut
+    -- en Enterprise Edition est DIAGNOSTIC+TUNING : une base neuve
+    -- autorise donc leur usage, meme si le client ne les a pas achetes.
+    -- Oracle recommande NONE dans ce cas. C'est le premier point de
+    -- controle des packs sur ces versions.
+    kv_dyn('param.control_management_pack_access',
+        'SELECT value FROM v$parameter WHERE name = ''control_management_pack_access''');
+
+    -- STATISTICS_LEVEL a BASIC desactive la collecte AWR, donc l'usage
+    -- du Diagnostics Pack. Utile pour interpreter l'exposition.
+    kv_dyn('param.statistics_level',
+        'SELECT value FROM v$parameter WHERE name = ''statistics_level''');
+
     -- ----------------------------------------------------------------
     -- V$LICENSE
     -- Les colonnes de coeurs et de sockets n'existent qu'a partir de 11.1.
@@ -369,6 +383,53 @@ BEGIN
     -- meme base. Emis en preuve structurelle, comme les autres, pour que
     -- le moteur n'ait qu'un seul mecanisme a appliquer.
     obj_dyn('rac_instances', 'SELECT COUNT(*) FROM gv$instance');
+
+    -- Active Data Guard : une standby ouverte en lecture pendant que le
+    -- redo s'applique. L'etat lui-meme est la preuve. (11.1 et suivants)
+    obj_dyn('adg_readonly_apply',
+        'SELECT COUNT(*) FROM v$database WHERE open_mode = ''READ ONLY WITH APPLY''');
+
+    -- Compression OLTP / Advanced (11.1 et suivants).
+    --
+    -- Avant 11.1, COMPRESS_FOR n'existe pas et la compression BASIC --
+    -- incluse en Enterprise Edition -- est indiscernable de la
+    -- compression payante : rien n'est donc remonte sur 9i et 10g,
+    -- plutot qu'un constat que l'on ne saurait etayer.
+    obj_dyn('oltp_compressed_tables',
+        'SELECT COUNT(*) FROM dba_tables WHERE compression = ''ENABLED''' ||
+        ' AND compress_for IN (''OLTP'',''ADVANCED'')' ||
+        ' AND owner NOT IN (' || c_sys || ')');
+
+    -- Compression par colonnes (HCC). Incluse sur Exadata, ZFS Storage
+    -- Appliance et Pillar Axiom ; payante ailleurs. Le collecteur ne
+    -- peut pas trancher sur le materiel : la regle porte la nuance.
+    -- Les parentheses sont indispensables : "A AND B OR C AND D"
+    -- s'evalue "(A AND B) OR (C AND D)", ce qui compterait des tables
+    -- non compressees en colonnes.
+    obj_dyn('hcc_compressed_tables',
+        'SELECT COUNT(*) FROM dba_tables WHERE compression = ''ENABLED''' ||
+        ' AND (compress_for LIKE ''QUERY%'' OR compress_for LIKE ''ARCHIVE%'')' ||
+        ' AND owner NOT IN (' || c_sys || ')');
+
+    -- SecureFiles (11.1 et suivants) : le stockage SecureFile lui-meme
+    -- est gratuit ; seules la compression, la deduplication et le
+    -- chiffrement des LOB sont payants.
+    obj_dyn('securefile_compressed',
+        'SELECT COUNT(*) FROM dba_lobs WHERE securefile = ''YES''' ||
+        ' AND NVL(compression,''NONE'') <> ''NONE''' ||
+        ' AND owner NOT IN (' || c_sys || ')');
+    obj_dyn('securefile_deduplicated',
+        'SELECT COUNT(*) FROM dba_lobs WHERE securefile = ''YES''' ||
+        ' AND NVL(deduplication,''NONE'') <> ''NONE''' ||
+        ' AND owner NOT IN (' || c_sys || ')');
+    obj_dyn('securefile_encrypted',
+        'SELECT COUNT(*) FROM dba_lobs WHERE securefile = ''YES''' ||
+        ' AND NVL(encrypt,''NONE'') <> ''NONE''' ||
+        ' AND owner NOT IN (' || c_sys || ')');
+
+    -- Flashback Data Archive (11.1) : facture sous le nom Total Recall
+    -- jusqu'a 12.1.0.1, inclus depuis 12.1.0.2.
+    obj_dyn('flashback_archives', 'SELECT COUNT(*) FROM dba_flashback_archive');
 
     -- Sentinelle : son absence signale un rapport tronque.
     kv('collect.sql_complete', '1');

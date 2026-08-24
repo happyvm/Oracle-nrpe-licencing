@@ -59,3 +59,28 @@ encrypted_tablespaces|Advanced Security|EE|0|-|Tablespaces chiffres (TDE)
 
 # Une instance unique n'est pas du clustering : seuil a 1.
 rac_instances|Real Application Clusters|EE|1|-|Instances ouvertes simultanement sur la base
+
+# --- Preuves disponibles a partir d'Oracle 11.1 ----------------------
+# Sur 9i et 10g, COMPRESS_FOR et les colonnes SecureFile n'existent pas :
+# le collecteur n'emet simplement pas ces cles, et les regles restent
+# sans effet.
+
+# Une standby ouverte en lecture pendant que le redo s'applique : l'etat
+# lui-meme atteste l'option.
+adg_readonly_apply|Active Data Guard|EE|0|-|Standby ouverte en lecture avec application du redo
+
+# La compression BASIC est incluse en EE ; seule OLTP/ADVANCED est
+# payante, et la distinction n'est lisible qu'a partir de 11.1.
+oltp_compressed_tables|Advanced Compression|EE|0|-|Tables en compression OLTP/ADVANCED
+
+# HCC est inclus sur Exadata, ZFS Storage Appliance et Pillar Axiom.
+# Le collecteur ne voit pas la baie de stockage : a verifier a la main.
+hcc_compressed_tables|Advanced Compression|EE|0|-|Compression par colonnes ; incluse sur Exadata, ZFSSA et Pillar -- verifier le stockage
+
+# Le stockage SecureFile est gratuit ; ses trois traitements ne le sont pas.
+securefile_compressed|Advanced Compression|EE|0|-|LOB SecureFile compresses
+securefile_deduplicated|Advanced Compression|EE|0|-|LOB SecureFile dedupliques
+securefile_encrypted|Advanced Security|EE|0|-|LOB SecureFile chiffres
+
+# Facture sous le nom Total Recall jusqu'a 12.1.0.1, inclus depuis 12.1.0.2.
+flashback_archives|Advanced Compression|EE|0|12.1.0.2|Flashback Data Archive (Total Recall)
