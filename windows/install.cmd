@@ -2,12 +2,21 @@
 rem =====================================================================
 rem  install.cmd
 rem
-rem  Installe le collecteur et le plugin de licences Oracle sur Windows,
-rem  SANS PowerShell.
+rem  Installe le collecteur et le plugin de licences Oracle sur les
+rem  serveurs Windows DEPOURVUS de PowerShell utilisable.
 rem
-rem  Destine en premier lieu a Windows Server 2003, qui n'embarque aucun
-rem  PowerShell, mais utilisable sur toute version : batch et Windows
-rem  Script Host sont presents de Windows 2000 a Server 2025.
+rem  Deploie la variante VBScript / Windows Script Host. Elle n'est
+rem  destinee qu'a Windows Server 2003, a Windows Server 2008 reste en
+rem  PowerShell 1.0, et aux serveurs ou une strategie de groupe interdit
+rem  l'execution de scripts PowerShell.
+rem
+rem  Partout ailleurs, utilisez windows\install.ps1 : PowerShell est la
+rem  voie principale, et VBScript est deprecie par Microsoft depuis 2023.
+rem
+rem  Ce script DETECTE PowerShell et s'arrete s'il en trouve une version
+rem  2.0 ou superieure -- deployer VBScript la ou il est inutile
+rem  reviendrait a se lier volontairement a un langage en fin de vie.
+rem  Passez /Force pour outrepasser (cas des GPO restrictives).
 rem
 rem  A executer depuis une invite de commandes ADMINISTRATEUR, a la
 rem  racine du depot :
@@ -21,6 +30,10 @@ rem =====================================================================
 
 setlocal
 
+set FORCE=0
+if /I "%~1"=="/Force" set FORCE=1
+if /I "%~1"=="-Force" set FORCE=1
+
 if "%INSTALL_DIR%"=="" set INSTALL_DIR=C:\Program Files\oracle-licensing
 if "%DATA_DIR%"==""    set DATA_DIR=C:\ProgramData\oracle-licensing
 if "%TASK_USER%"==""   set TASK_USER=SYSTEM
@@ -33,15 +46,57 @@ if not exist "%ProgramData%\" (
     )
 )
 
-rem Racine du depot : le repertoire parent de ce script.
 set SRC=%~dp0..
+
+rem ------------------------------------------------------------------
+rem  Detection de PowerShell
+rem
+rem  Sur PowerShell 1.0, $PSVersionTable n'existe pas : l'expression
+rem  rend $null et "exit" retourne 0. Un code retour inferieur a 2
+rem  signifie donc "pas de PowerShell exploitable ici".
+rem ------------------------------------------------------------------
+rem  Le "set" reste HORS du bloc "if" : a l'interieur, %errorlevel%
+rem  serait remplace des l'analyse du bloc et vaudrait toujours 0, ce
+rem  qui rendrait la detection inoperante sans rien signaler.
+set PSMAJOR=0
+set PSEXE=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe
+if not exist "%PSEXE%" goto :ps_checked
+"%PSEXE%" -NoProfile -Command "exit $PSVersionTable.PSVersion.Major" >nul 2>&1
+set PSMAJOR=%errorlevel%
+:ps_checked
+
+if %PSMAJOR% GEQ 2 (
+    if "%FORCE%"=="0" (
+        echo.
+        echo   PowerShell %PSMAJOR%.x est present sur ce serveur.
+        echo.
+        echo   La variante VBScript n'est pas necessaire ici : elle est
+        echo   reservee aux serveurs qui n'ont pas de PowerShell, car le
+        echo   langage est deprecie par Microsoft depuis 2023.
+        echo.
+        echo   Utilisez plutot, dans une console PowerShell elevee :
+        echo       .\windows\install.ps1
+        echo   et cote NSClient++ :
+        echo       windows\nsclient-oracle-licensing.ini
+        echo.
+        echo   Si une strategie de groupe interdit l'execution de scripts
+        echo   PowerShell sur ce serveur, relancez avec :
+        echo       windows\install.cmd /Force
+        echo.
+        exit /b 1
+    )
+    echo == PowerShell %PSMAJOR%.x detecte, installation VBScript forcee
+) else (
+    echo == Aucun PowerShell exploitable detecte : variante VBScript appropriee
+)
 
 echo == Verification de l'environnement
 cscript //NoLogo //B "%~dp0checkenv.vbs" 2>nul
 if errorlevel 1 (
     echo    ERREUR : Windows Script Host indisponible ou desactive.
-    echo    Ce mode d'installation en depend. Verifiez la strategie de
-    echo    groupe, ou utilisez windows\install.ps1 avec PowerShell.
+    echo    Ce mode d'installation en depend, et aucun PowerShell
+    echo    utilisable n'a ete trouve. Ce serveur ne peut pas etre
+    echo    supervise en l'etat : activez WSH, ou installez WMF 2.0.
     exit /b 1
 )
 echo    Windows Script Host : disponible
@@ -51,17 +106,13 @@ if not exist "%INSTALL_DIR%"       mkdir "%INSTALL_DIR%"
 if not exist "%DATA_DIR%"          mkdir "%DATA_DIR%"
 if not exist "%DATA_DIR%\cache"    mkdir "%DATA_DIR%\cache"
 
-echo == Scripts
+rem Seule la variante VBScript est deposee : installer aussi les
+rem scripts PowerShell sur une machine qui ne peut pas les executer
+rem n'apporterait que de la confusion a la prochaine intervention.
+echo == Scripts (variante VBScript)
 copy /Y "%SRC%\windows\check_oracle_licensing.vbs"     "%INSTALL_DIR%\" >nul
 copy /Y "%SRC%\windows\oracle_licensing_collector.vbs" "%INSTALL_DIR%\" >nul
 copy /Y "%SRC%\sql\collect_licensing.sql"              "%INSTALL_DIR%\" >nul
-
-rem Les variantes PowerShell sont deposees aussi : elles ne servent que
-rem si WSH vient a etre desactive, ou apres le retrait de VBScript.
-if exist "%SRC%\windows\check_oracle_licensing.ps1" (
-    copy /Y "%SRC%\windows\check_oracle_licensing.ps1"     "%INSTALL_DIR%\" >nul
-    copy /Y "%SRC%\windows\oracle_licensing_collector.ps1" "%INSTALL_DIR%\" >nul
-)
 
 echo == Donnees de reference
 copy /Y "%SRC%\etc\licensable-features.map" "%DATA_DIR%\" >nul
@@ -89,7 +140,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo Installation terminee.
+echo Installation terminee (variante VBScript).
 echo.
 echo Etapes suivantes :
 echo   1. Renseignez la declaration contractuelle dans
@@ -102,7 +153,8 @@ echo   3. Premiere collecte :
 echo      cscript //NoLogo "%INSTALL_DIR%\oracle_licensing_collector.vbs" /Trace
 echo   4. Verification :
 echo      cscript //NoLogo "%INSTALL_DIR%\check_oracle_licensing.vbs" /Sid:^<SID^> /Mode:inventory /Detail
-echo   5. Fusionnez windows\nsclient-oracle-licensing.ini dans nsclient.ini,
-echo      puis redemarrez NSClient++.
+echo   5. Fusionnez windows\nsclient-oracle-licensing-VBS.ini dans
+echo      nsclient.ini ^(surtout PAS la version PowerShell^), puis
+echo      redemarrez NSClient++.
 
 endlocal

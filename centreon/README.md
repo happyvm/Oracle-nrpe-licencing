@@ -50,9 +50,10 @@ service distinct, sans le contrôle d'options. Voir
 **Les hôtes Windows** utilisent les mêmes noms de commandes NRPE, servis
 par NSClient++ au lieu de l'agent NRPE. La configuration Centreon est
 identique — commandes, arguments, seuils et métriques ne changent pas,
-que le serveur exécute la variante VBScript (par défaut, y compris sur
-Windows Server 2003) ou la variante PowerShell. Côté Centreon, rien ne
-distingue un hôte Linux d'un hôte Windows.
+que le serveur exécute la variante PowerShell (voie principale) ou la
+variante VBScript (Windows Server 2003, et tout serveur sans PowerShell
+utilisable). Côté Centreon, rien ne distingue un hôte Linux d'un hôte
+Windows, ni un hôte Windows moderne d'un 2003.
 
 **`Oracle-Lic-Freshness` n'est pas optionnel.** Sans lui, une panne
 silencieuse du timer de collecte figerait les données : tous les autres

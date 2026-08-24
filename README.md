@@ -63,7 +63,18 @@ sudo -u oracle /usr/local/bin/oracle_licensing_collector.sh -v
 systemctl reload nrpe
 ```
 
-### Windows (2003 → 2025, sans PowerShell)
+### Windows (voie principale, PowerShell)
+
+Dans une console PowerShell **élevée** :
+
+```powershell
+.\windows\install.ps1
+```
+
+Puis fusionner `windows\nsclient-oracle-licensing.ini` dans
+`nsclient.ini`.
+
+### Windows sans PowerShell (Server 2003, ou 2008 en PowerShell 1.0)
 
 Dans une invite de commandes **administrateur**, à la racine du dépôt :
 
@@ -71,24 +82,20 @@ Dans une invite de commandes **administrateur**, à la racine du dépôt :
 windows\install.cmd
 ```
 
-Batch et Windows Script Host uniquement : aucune dépendance à
-PowerShell, donc utilisable tel quel sur Windows Server 2003.
+Batch et Windows Script Host uniquement, aucune dépendance à PowerShell.
+Le script **détecte PowerShell et s'arrête** s'il en trouve une version
+2.0 ou supérieure, en renvoyant vers `install.ps1` : VBScript étant
+déprécié, il ne doit être déployé que là où il est indispensable.
+`/Force` outrepasse ce garde-fou, pour le cas où une GPO interdit
+l'exécution de scripts PowerShell.
 
-### Windows (variante PowerShell)
-
-Pour les serveurs où WSH est désactivé par durcissement, ou après le
-retrait de VBScript :
-
-```powershell
-.\windows\install.ps1
-```
+Puis fusionner `windows\nsclient-oracle-licensing-vbs.ini` dans
+`nsclient.ini` — jamais les deux fichiers à la fois, les noms de
+commandes sont identiques.
 
 Dans les deux cas, renseigner ensuite
 `C:\ProgramData\oracle-licensing\oracle-licensing.conf` (même fichier
-et même syntaxe que sous Unix), fusionner
-`windows\nsclient-oracle-licensing.ini` dans `nsclient.ini` — les
-commandes VBScript y sont actives par défaut, les commandes PowerShell
-commentées juste en dessous — et redémarrer NSClient++.
+et même syntaxe que sous Unix) et redémarrer NSClient++.
 
 Le compte exécutant la tâche planifiée doit appartenir au groupe local
 **ORA_DBA**, sans quoi la connexion `/ as sysdba` échoue.
@@ -212,8 +219,8 @@ Périmètre couvert : **Windows Server 2003 → 2025**, **RHEL 5 → 9**,
 | Plateforme | Statut |
 |---|---|
 | RHEL 5 → 9 | supporté (shell POSIX + awk ; replis pour `lscpu`, `timeout`, `systemd`) |
-| Windows Server 2003 → 2025 | supporté via **VBScript / Windows Script Host**, natif partout, sans installation |
-| Windows Server 2008 R2 → 2025 | également supporté via PowerShell 2.0+ |
+| Windows Server 2008 R2 → 2025 | supporté via **PowerShell 2.0+** (voie principale) |
+| Windows Server 2003, et 2008 en PowerShell 1.0 | supporté via **VBScript / Windows Script Host**, uniquement là où PowerShell manque |
 | Oracle 10.1 → 19c | supporté |
 | Oracle 9i | **dégradé** — voir ci-dessous |
 
@@ -224,10 +231,11 @@ Périmètre couvert : **Windows Server 2003 → 2025**, **RHEL 5 → 9**,
    n'enregistre nulle part quelles options ont servi. Le mode `options`
    renvoie donc UNKNOWN plutôt qu'un OK trompeur. Sur ces bases,
    déclarez `inventory`, `sessions` et `processors`, pas `options`.
-2. **VBScript est déprécié depuis 2023.** Il reste livré jusqu'à Server
-   2025, puis deviendra une fonctionnalité à la demande. La variante
-   PowerShell est fournie pour cette échéance et pour les serveurs où
-   WSH est désactivé par durcissement.
+2. **VBScript n'est déployé que là où PowerShell manque.** Le langage
+   est déprécié depuis 2023 (livré jusqu'à Server 2025, puis
+   fonctionnalité à la demande) : l'installateur batch refuse de
+   s'exécuter s'il détecte PowerShell 2.0 ou supérieur, pour ne pas lier
+   un serveur moderne à un langage en fin de vie.
 3. **Trois moteurs implémentent la même logique** (awk, VBScript,
    PowerShell). `tests/run_parity_tests.sh` les compare sur des données
    identiques ; toute modification de la logique doit le faire passer.
