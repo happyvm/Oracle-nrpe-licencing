@@ -151,13 +151,16 @@ Function VersionGe(sA, sB)
     VersionGe = True
 End Function
 
+' Arrondi au plus proche plutot que troncature : "1 h" pour 1 h 59
+' induirait en erreur sur un age de cache, et la valeur affichee
+' changerait d'une unite selon la seconde d'execution.
 Function FormatAge(nSeconds)
     If nSeconds < 3600 Then
-        FormatAge = CStr(Int(nSeconds / 60)) & " min"
+        FormatAge = CStr(Int(nSeconds / 60 + 0.5)) & " min"
     ElseIf nSeconds < 172800 Then
-        FormatAge = CStr(Int(nSeconds / 3600)) & " h"
+        FormatAge = CStr(Int(nSeconds / 3600 + 0.5)) & " h"
     Else
-        FormatAge = CStr(Int(nSeconds / 86400)) & " j"
+        FormatAge = CStr(Int(nSeconds / 86400 + 0.5)) & " j"
     End If
 End Function
 
@@ -1050,6 +1053,18 @@ End Function
 Function ModeFreshness()
     Dim nStatus, sLabel, sMsg
     nStatus = OK_ : sLabel = "OK"
+
+    ' Un cache date du futur trahit une horloge decalee ou un calcul
+    ' d'epoque errone cote collecteur -- risque reel en VBScript, ou le
+    ' decalage de fuseau vient de WMI. La tolerance couvre la derive NTP.
+    If gAge < -300 Then
+        WScript.Echo "WARNING - " & gDbName & "/" & gSid & _
+            ": horodatage de collecte dans le futur de " & FormatAge(-gAge) & _
+            " (horloge du serveur ou calcul d'epoque a verifier), fraicheur inverifiable" & _
+            "|cache_age=" & gAge & "s;" & gMaxCacheAge & ";" & (gMaxCacheAge * 2) & ";0"
+        ModeFreshness = WARNING_
+        Exit Function
+    End If
     sMsg = "derniere collecte il y a " & FormatAge(gAge) & " (" & _
            GetKV("collect.date", "inconnue") & "), statut=" & gCStatus
 

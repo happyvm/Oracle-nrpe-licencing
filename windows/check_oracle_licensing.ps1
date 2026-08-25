@@ -280,10 +280,14 @@ function Test-IsLicensed([string] $Option) {
     return $false
 }
 
+# Arrondi au plus proche plutot que troncature : "1 h" pour 1 h 59
+# induirait en erreur sur un age de cache, et la valeur affichee
+# changerait d'une unite selon la seconde d'execution.
+# [Math]::Floor evite la regle "au pair" de [int] sur les demis.
 function Format-Age([int] $Seconds) {
-    if ($Seconds -lt 3600)   { return ("{0} min" -f [int]($Seconds / 60)) }
-    if ($Seconds -lt 172800) { return ("{0} h"   -f [int]($Seconds / 3600)) }
-    return ("{0} j" -f [int]($Seconds / 86400))
+    if ($Seconds -lt 3600)   { return ("{0} min" -f [int][Math]::Floor($Seconds / 60.0    + 0.5)) }
+    if ($Seconds -lt 172800) { return ("{0} h"   -f [int][Math]::Floor($Seconds / 3600.0  + 0.5)) }
+    return ("{0} j" -f [int][Math]::Floor($Seconds / 86400.0 + 0.5))
 }
 
 function Join-SortedKeys($Table) {
@@ -706,6 +710,15 @@ function Invoke-ModeSessions {
 # =====================================================================
 function Invoke-ModeFreshness {
     $status = $OK; $label = 'OK'
+
+    # Un cache date du futur trahit une horloge decalee ou un calcul
+    # d'epoque errone cote collecteur. La tolerance couvre la derive
+    # NTP ordinaire.
+    if ($Age -lt -300) {
+        Write-Output ("WARNING - {0}/{1}: horodatage de collecte dans le futur de {2} (horloge du serveur ou calcul d'epoque a verifier), fraicheur inverifiable|cache_age={3}s;{4};{5};0" -f `
+            $DbName, $Sid, (Format-Age (-$Age)), $Age, $MaxCacheAge, ($MaxCacheAge * 2))
+        $script:ExitCode = $WARNING; return
+    }
     $msg = "derniere collecte il y a {0} ({1}), statut={2}" -f `
            (Format-Age $Age), (Get-KV 'collect.date' 'inconnue'), $CStatus
 

@@ -330,6 +330,21 @@ mkcache ORCL 300
 assert_rc 0 "cache sain : le garde-fou ne bloque pas" -s ORCL -m options \
     --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
 
+echo "== Horodatage aberrant =="
+# Un cache date du futur trahit une horloge decalee ou un calcul
+# d'epoque errone cote collecteur. Sans ce controle, freshness affichait
+# "il y a -120 min" et concluait OK.
+now=$(date +%s)
+printf 'KV|collect.epoch|%s\nKV|db.name|FUT\nKV|inst.version|19.22.0.0.0\nKV|db.edition|EE\nKV|collect.sql_complete|1\nKV|collect.status|ok\nKV|host.cpu.cores|8\nKV|host.processor_licenses|4\n' \
+    "$(( now + 7200 ))" > "$WORK/FUT.dat"
+assert_rc 1 "cache date du futur -> WARNING"  -s FUT -m freshness
+assert_out 'dans le futur' "le motif est explicite"      -s FUT -m freshness
+assert_out 'horloge'       "la piste de correction est donnee" -s FUT -m freshness
+# Une derive NTP ordinaire ne doit pas declencher l'alerte.
+printf 'KV|collect.epoch|%s\nKV|db.name|SKEW\nKV|inst.version|19.22.0.0.0\nKV|db.edition|EE\nKV|collect.sql_complete|1\nKV|collect.status|ok\nKV|host.cpu.cores|8\nKV|host.processor_licenses|4\n' \
+    "$(( now + 30 ))" > "$WORK/SKEW.dat"
+assert_rc 0 "derive NTP de 30 s toleree"      -s SKEW -m freshness
+
 echo "== Validation des entrees =="
 # Un seuil mal saisi valait zero a la comparaison : tout pic le
 # depassait, et l'exploitant heritait d'un WARNING permanent sans cause

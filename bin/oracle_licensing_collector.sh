@@ -51,6 +51,17 @@ Codes retour : 0 succes, 1 succes partiel, 2 echec total, 3 erreur d'usage.
 EOF
 }
 
+# Nettoyage des temporaires, y compris sur interruption : un collecteur
+# quotidien tue en cours de route -- arret systeme, delai du timer --
+# laisserait sinon un residu dans /tmp a chaque fois.
+TMP_PREFIX=${TMPDIR:-/tmp}/orlic.$$
+cleanup_tmp() {
+    rm -f "$TMP_PREFIX".* 2>/dev/null
+}
+trap 'cleanup_tmp' EXIT
+trap 'cleanup_tmp; exit 130' INT
+trap 'cleanup_tmp; exit 143' TERM
+
 log()  { [ "$VERBOSE" = 1 ] && echo "[`date '+%H:%M:%S'`] $*" >&2; return 0; }
 warn() { echo "$PROGNAME: $*" >&2; }
 die()  { warn "$*"; exit 2; }
@@ -199,16 +210,21 @@ collect_host_cpu() {
     # Oracle arrondit toujours a l'entier superieur.
     licenses=`awk -v c="$cores" -v f="$factor" 'BEGIN{v=c*f; r=int(v); if(v>r) r++; print r}'`
 
-    echo "KV|host.name|`hostname -f 2>/dev/null || hostname`"
-    echo "KV|host.arch|$arch"
-    echo "KV|host.cpu.model|${model:-unknown}"
-    echo "KV|host.cpu.sockets|${sockets:-0}"
-    echo "KV|host.cpu.cores|${cores:-0}"
-    echo "KV|host.cpu.threads|${threads:-0}"
-    echo "KV|host.cpu.reliable|$reliable"
-    echo "KV|host.virt|$virt"
-    echo "KV|host.core_factor|$factor"
-    echo "KV|host.processor_licenses|$licenses"
+    # printf plutot que echo : sous dash, echo interprete les
+    # antislashes d'une valeur -- un modele de processeur exotique
+    # serait deforme, et un "\c" tronquerait la suite du cache. Le
+    # comportement d'echo differe entre dash et bash, donc entre
+    # distributions.
+    printf 'KV|host.name|%s\n'               "`hostname -f 2>/dev/null || hostname`"
+    printf 'KV|host.arch|%s\n'               "$arch"
+    printf 'KV|host.cpu.model|%s\n'          "${model:-unknown}"
+    printf 'KV|host.cpu.sockets|%s\n'        "${sockets:-0}"
+    printf 'KV|host.cpu.cores|%s\n'          "${cores:-0}"
+    printf 'KV|host.cpu.threads|%s\n'        "${threads:-0}"
+    printf 'KV|host.cpu.reliable|%s\n'       "$reliable"
+    printf 'KV|host.virt|%s\n'               "$virt"
+    printf 'KV|host.core_factor|%s\n'        "$factor"
+    printf 'KV|host.processor_licenses|%s\n' "$licenses"
 }
 
 # ---------------------------------------------------------------------
@@ -234,19 +250,30 @@ discover_instances() {
             warn "ORACLE_HOME absent pour $sid : ${home:-<vide>}"
             IFS=:; continue
         fi
-        if [ -n "$INCLUDE_SIDS" ] && ! echo " $INCLUDE_SIDS " | grep -q " $sid "; then
+        if [ -n "$INCLUDE_SIDS" ] && ! sid_in_list "$sid" "$INCLUDE_SIDS"; then
             log "$sid ignore (hors INCLUDE_SIDS)"; IFS=:; continue
         fi
-        if [ -n "$EXCLUDE_SIDS" ] && echo " $EXCLUDE_SIDS " | grep -q " $sid "; then
+        if [ -n "$EXCLUDE_SIDS" ] && sid_in_list "$sid" "$EXCLUDE_SIDS"; then
             log "$sid ignore (dans EXCLUDE_SIDS)"; IFS=:; continue
         fi
-        echo "$sid:$home"
+        printf '%s:%s\n' "$sid" "$home"
         IFS=:
     done < "$ORATAB"
     IFS=$oldifs
     # "rest" n'est pas exploite mais doit exister pour que "read" ne
     # replie pas les champs suivants dans "home".
     : "${rest:-}"
+}
+
+# Appartenance a une liste de SID separes par des espaces. La
+# comparaison est litterale : passer par grep interpreterait le SID
+# comme une expression reguliere.
+sid_in_list() {
+    _needle=$1
+    for _item in $2; do
+        [ "$_item" = "$_needle" ] && return 0
+    done
+    return 1
 }
 
 instance_is_running() {
@@ -281,7 +308,7 @@ query_instance() {
         return 1
     fi
 
-    qtmp=`mktemp "${TMPDIR:-/tmp}/orlic.$$.XXXXXX"` || return 1
+    qtmp=`mktemp "${TMP_PREFIX}.XXXXXX"` || return 1
     cat > "$qtmp.in" <<EOSQL
 CONNECT / AS SYSDBA
 @${SQL_FILE}
@@ -336,7 +363,7 @@ write_cache() {
     target=$CACHE_DIR/$sid.dat
 
     tmp=`mktemp "$target.XXXXXX"` || { warn "$sid : mktemp a echoue"; return 1; }
-    echo "$content" > "$tmp" || { rm -f "$tmp"; return 1; }
+    printf '%s\n' "$content" > "$tmp" || { rm -f "$tmp"; return 1; }
 
     # Lisible par le compte NRPE, jamais modifiable par lui.
     chmod 0640 "$tmp"
@@ -356,7 +383,7 @@ main() {
 
     host_block=`collect_host_cpu`
 
-    inst_file=`mktemp "${TMPDIR:-/tmp}/orlic.inst.$$.XXXXXX"` || die "mktemp a echoue"
+    inst_file=`mktemp "${TMP_PREFIX}.inst.XXXXXX"` || die "mktemp a echoue"
     discover_instances > "$inst_file"
     if [ ! -s "$inst_file" ]; then
         rm -f "$inst_file"
@@ -402,7 +429,7 @@ KV|collect.status|query_failed"
         fi
 
         if [ "$DRY_RUN" = 1 ]; then
-            echo "$content"
+            printf '%s\n' "$content"
         else
             write_cache "$sid" "$content" || ko=`expr $ko + 1`
         fi

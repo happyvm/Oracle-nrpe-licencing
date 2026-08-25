@@ -78,11 +78,12 @@ mkcache() {
 # voulu : un exploitant Windows doit lire la syntaxe qu'il tape. La
 # parite porte sur le verdict, pas sur la forme de l'appel.
 normalise() {
-    sed -e 's/cache_age=[0-9]*s/cache_age=Ns/g' \
+    sed -e 's/cache_age=-\?[0-9]*s/cache_age=Ns/g' \
         -e 's/il y a [0-9]* \(min\|h\|j\)/il y a N/g' \
         -e 's/(lscpu indisponible)/(inventaire indisponible)/g' \
         -e 's/(WMI indisponible)/(inventaire indisponible)/g' \
-        -e 's/^UNKNOWN - [-/][A-Za-z-]* invalide/UNKNOWN - <option> invalide/'
+        -e 's/^UNKNOWN - [-/][A-Za-z-]* invalide/UNKNOWN - <option> invalide/' \
+        -e 's/dans le futur de [0-9]* \(min\|h\|j\)/dans le futur de N/'
 }
 
 compare() {
@@ -213,6 +214,13 @@ printf 'KV|collect.epoch|%s\nKV|db.name|FAILED\nKV|collect.status|query_failed\n
     "$(( $(date +%s) - 300 ))" > "$WORK/FAILED.dat"
 compare "collecte en echec"            FAILED -m options
 compare "collecte en echec, processors" FAILED -m processors
+
+echo "== Horodatage aberrant =="
+# Un cache date du futur trahit une horloge decalee ou un calcul
+# d'epoque errone -- risque reel cote VBScript, ou le fuseau vient de WMI.
+printf 'KV|collect.epoch|%s\nKV|db.name|FUT\nKV|inst.version|19.22.0.0.0\nKV|db.edition|EE\nKV|collect.sql_complete|1\nKV|collect.status|ok\nKV|host.cpu.cores|8\nKV|host.processor_licenses|4\n' \
+    "$(( $(date +%s) + 7200 ))" > "$WORK/FUT.dat"
+compare "cache date du futur"          FUT   -m freshness
 
 echo "== Validation des entrees =="
 compare "seuil non numerique"          ORCL  -m sessions -w abc -c 99999

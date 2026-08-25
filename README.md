@@ -233,13 +233,13 @@ WINE=$(command -v wine64) \
 
 | Suite | Cas | Couverture |
 |---|---|---|
-| `run_tests.sh` | 102 | les cinq modes, les seuils, l'absence de faux positifs, et les particularités de chaque version — 9i à 21c |
-| `run_collector_tests.sh` | 27 | découverte via `oratab`, nommage des caches, écriture atomique, filtres, `--dry-run`, instance arrêtée |
-| `run_parity_tests.sh` | 41 | verdicts identiques entre les trois moteurs |
+| `run_tests.sh` | 106 | les cinq modes, les seuils, l'absence de faux positifs, et les particularités de chaque version — 9i à 21c |
+| `run_collector_tests.sh` | 28 | découverte via `oratab`, nommage des caches, écriture atomique, filtres, `--dry-run`, instance arrêtée |
+| `run_parity_tests.sh` | 42 | verdicts identiques entre les trois moteurs |
 
 Les deux premières suites sont rejouées **sous chaque shell disponible**
 (`dash`, `bash 3.2`, `bash 5.x`), et le moteur awk est vérifié sous
-`gawk`, `mawk` et `nawk` — soit **428 exécutions de test**. S'y ajoute
+`gawk`, `mawk` et `nawk` — soit **444 exécutions de test**. S'y ajoute
 `shellcheck -S warning`, sans avertissement.
 
 Neuf jeux de référence dans `tests/fixtures/`, un par cas

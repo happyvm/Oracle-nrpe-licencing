@@ -66,10 +66,13 @@ function version_ge(a, b,    x, y, na, nb, i, k, u, v) {
     return 1
 }
 
+# Arrondi au plus proche plutot que troncature : "1 h" pour 1 h 59
+# induirait en erreur sur un age de cache, et la valeur affichee
+# changerait d'une unite selon la seconde d'execution.
 function human_age(s) {
-    if (s < 3600)   return int(s / 60)    " min"
-    if (s < 172800) return int(s / 3600)  " h"
-    return int(s / 86400) " j"
+    if (s < 3600)   return int(s / 60    + 0.5) " min"
+    if (s < 172800) return int(s / 3600  + 0.5) " h"
+    return int(s / 86400 + 0.5) " j"
 }
 
 # ---------------------------------------------------------------------
@@ -620,6 +623,19 @@ function mode_sessions(    inst_hwm, hist_hwm, peak, current, maxs,
 # =====================================================================
 function mode_freshness(    status, label, msg) {
     status = OK; label = "OK"
+
+    # Un cache date du futur trahit une horloge decalee ou un calcul
+    # d'epoque errone cote collecteur. La fraicheur devient alors
+    # inverifiable : mieux vaut le dire que d'afficher un age negatif.
+    # La tolerance couvre la derive NTP ordinaire.
+    if (age < -300) {
+        printf "WARNING - %s/%s: horodatage de collecte dans le futur de %s ", \
+               db_name, sid, human_age(-age)
+        printf "(horloge du serveur ou calcul d'epoque a verifier), fraicheur inverifiable"
+        printf "|cache_age=%ds;%d;%d;0\n", age, max_cache_age, max_cache_age * 2
+        return WARNING
+    }
+
     msg = sprintf("derniere collecte il y a %s (%s), statut=%s", \
                   human_age(age), \
                   (kv["collect.date"] != "" ? kv["collect.date"] : "inconnue"), \
