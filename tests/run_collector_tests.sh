@@ -196,6 +196,44 @@ out=$("$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" -n 2>/dev/null)
 [[ ! -d $CACHE ]] && ok "--dry-run n'ecrit rien sur disque" || bad "--dry-run a ecrit dans le cache"
 grep -q '^KV|db.name|PROD1$' <<<"$out" && ok "--dry-run emet sur stdout" || bad "--dry-run muet"
 
+echo "== Repli de timeout (chemin RHEL 5) =="
+# La commande timeout n'existe pas avant RHEL 6 : le collecteur embarque
+# un chien de garde maison. C'est le seul code specifique a une
+# plateforme que la suite ne pouvait pas exercer, faute de machine
+# RHEL 5 -- ORACLE_LICENSING_NO_TIMEOUT le force depuis n'importe ou.
+rm -rf "$CACHE"
+cat > "$WORK/oratab" <<EOS
+PROD1:$H1:Y
+EOS
+out=$(ORACLE_LICENSING_NO_TIMEOUT=1 "$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" 2>&1)
+if [[ -f $CACHE/PROD1.dat ]] && grep -q '^KV|collect.status|ok$' "$CACHE/PROD1.dat"; then
+    ok "collecte reussie sans la commande timeout"
+else
+    bad "le repli maison de timeout ne collecte pas" "${out##*$'\n'}"
+fi
+grep -q '^OBJ|part_tables|17$' "$CACHE/PROD1.dat" 2>/dev/null \
+    && ok "repli timeout : donnees completes" || bad "repli timeout : donnees incompletes"
+
+# Un sqlplus qui ne rend jamais la main doit etre interrompu, et
+# l'instance marquee en echec plutot que de bloquer tout le serveur.
+cat > "$H1/bin/sqlplus" <<'EOS'
+#!/usr/bin/env bash
+sleep 120
+EOS
+chmod +x "$H1/bin/sqlplus"
+rm -rf "$CACHE"
+sed -i 's/^SQLPLUS_TIMEOUT=.*/SQLPLUS_TIMEOUT=2/' "$WORK/conf"
+t0=$(date +%s)
+ORACLE_LICENSING_NO_TIMEOUT=1 "$SHELL_UNDER_TEST" "$COLLECTOR" --config "$WORK/conf" >/dev/null 2>&1
+elapsed=$(( $(date +%s) - t0 ))
+if [[ $elapsed -lt 30 ]]; then
+    ok "sqlplus bloque interrompu en ${elapsed}s"
+else
+    bad "sqlplus bloque non interrompu (${elapsed}s)"
+fi
+grep -q '^KV|collect.status|query_failed$' "$CACHE/PROD1.dat" 2>/dev/null \
+    && ok "instance bloquee marquee en echec" || bad "instance bloquee mal marquee"
+
 echo "== Instance arretee =="
 rm -rf "$CACHE"
 cat > "$WORK/oratab" <<EOS

@@ -93,7 +93,7 @@ une divergence signifierait que deux serveurs rendent des verdicts
 différents sur des données identiques — ce qui ruine la crédibilité d'un
 contrôle de licence.
 
-La parade est `tests/run_parity_tests.sh` : 42 cas comparent le code
+La parade est `tests/run_parity_tests.sh` : 43 cas comparent le code
 retour et la ligne de statut des **trois** moteurs sur des caches
 identiques. **Toute modification de la logique doit passer ce test.**
 
@@ -140,7 +140,7 @@ Replis spécifiques aux versions anciennes :
 | Absence | Version | Repli |
 |---|---|---|
 | `lscpu` | RHEL 5 | lecture de `/proc/cpuinfo` |
-| `timeout` | RHEL 5 | chien de garde en arrière-plan intégré au collecteur |
+| `timeout` | RHEL 5 | chien de garde en arrière-plan intégré au collecteur, exercé par les tests via `ORACLE_LICENSING_NO_TIMEOUT=1` |
 | `systemd-detect-virt` | RHEL 5, 6 | `virt-what`, puis `dmidecode`, puis l'indicateur `hypervisor` de `/proc/cpuinfo` |
 | `systemd` | RHEL 5, 6 | `/etc/cron.d/oracle-licensing` |
 | `pgrep` | installations minimales | `ps -ef` |
@@ -360,12 +360,12 @@ Enterprise Edition vers une plateforme Standard.
 |---|---|
 | Moteur awk | exécuté sous **gawk, mawk, nawk** |
 | Scripts shell | exécutés sous **bash 3.2** (compilé pour ce test), **dash**, **bash 5.2** |
-| Suites Unix | 106 + 28 tests, rejoués sous chacun des trois shells |
+| Suites Unix | 109 + 32 tests, rejoués sous chacun des trois shells |
 | Analyse statique | `shellcheck -S warning`, sans avertissement |
 | Moteur PowerShell | exécuté sous **PowerShell 7.4** |
 | Moteur VBScript | exécuté sous **cscript** (wine), les cinq modes |
-| Volume total | **444 exécutions de test**, neuf jeux de référence (9i à 21c) |
-| Parité des trois moteurs | 42 cas comparés, codes retour et ligne de statut, détection de divergence vérifiée par injection |
+| Volume total | **466 exécutions de test**, neuf jeux de référence (9i à 21c) |
+| Parité des trois moteurs | 43 cas comparés, codes retour et ligne de statut, détection de divergence vérifiée par injection |
 
 **Ce qui n'a pas pu être vérifié par exécution**, et doit l'être en
 recette avant déploiement :

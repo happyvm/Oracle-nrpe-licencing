@@ -214,6 +214,7 @@ printf 'KV|collect.epoch|%s\nKV|db.name|FAILED\nKV|collect.status|query_failed\n
     "$(( $(date +%s) - 300 ))" > "$WORK/FAILED.dat"
 compare "collecte en echec"            FAILED -m options
 compare "collecte en echec, processors" FAILED -m processors
+compare "inventaire sur donnees incompletes" FAILED -m inventory
 
 echo "== Horodatage aberrant =="
 # Un cache date du futur trahit une horloge decalee ou un calcul
