@@ -155,6 +155,11 @@ se reconnecter à la base.
 | CRITICAL | option non détenue **en cours d'utilisation**, ou option inutilisable dans l'édition installée |
 | WARNING | usage **seulement historique**, ou pack **accessible** sans licence déclarée, ou cache périmé |
 | OK | usage couvert, ou feature devenue gratuite dans cette version |
+| UNKNOWN | cache **inexploitable** — collecte en échec, instance arrêtée, rapport tronqué — ou entrée invalide |
+
+**Un OK signifie « vérifié et conforme », jamais « rien trouvé ».** Si la
+collecte a échoué ou si le rapport est tronqué, le plugin rend UNKNOWN
+plutôt qu'un vert trompeur.
 
 La distinction courant / historique évite de traiter au même niveau
 d'urgence un `SQL Tuning Advisor` lancé une fois en 2021 et un
@@ -228,13 +233,13 @@ WINE=$(command -v wine64) \
 
 | Suite | Cas | Couverture |
 |---|---|---|
-| `run_tests.sh` | 85 | les cinq modes, les seuils, l'absence de faux positifs, et les particularités de chaque version — 9i à 21c |
-| `run_collector_tests.sh` | 23 | découverte via `oratab`, nommage des caches, écriture atomique, filtres, `--dry-run`, instance arrêtée |
-| `run_parity_tests.sh` | 37 | verdicts identiques entre les trois moteurs |
+| `run_tests.sh` | 106 | les cinq modes, les seuils, l'absence de faux positifs, et les particularités de chaque version — 9i à 21c |
+| `run_collector_tests.sh` | 28 | découverte via `oratab`, nommage des caches, écriture atomique, filtres, `--dry-run`, instance arrêtée |
+| `run_parity_tests.sh` | 42 | verdicts identiques entre les trois moteurs |
 
 Les deux premières suites sont rejouées **sous chaque shell disponible**
 (`dash`, `bash 3.2`, `bash 5.x`), et le moteur awk est vérifié sous
-`gawk`, `mawk` et `nawk` — soit **361 exécutions de test**. S'y ajoute
+`gawk`, `mawk` et `nawk` — soit **444 exécutions de test**. S'y ajoute
 `shellcheck -S warning`, sans avertissement.
 
 Neuf jeux de référence dans `tests/fixtures/`, un par cas

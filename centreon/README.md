@@ -104,6 +104,12 @@ usage.
 | WARNING sur `exposed_packs` | porte ouverte, pas d'usage constaté | DBA, correction de paramètre |
 | WARNING sur `unlicensed_past` | usage passé à justifier | DBA, revue périodique |
 | CRITICAL sur `freshness` | le contrôle ne fonctionne plus | équipe supervision |
+| UNKNOWN sur `options` | cache inexploitable : collecte en échec, instance arrêtée ou rapport tronqué | équipe supervision |
+
+Un UNKNOWN sur `options` n'est pas un incident de licence : c'est le
+signe que le contrôle n'a pas pu s'exécuter. Il est délibéré — un OK
+rendu sans données vérifiées serait bien plus dangereux. Traitez-le
+comme un défaut de collecte, au même titre que `freshness`.
 
 La distinction entre les trois premières lignes compte :
 

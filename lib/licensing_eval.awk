@@ -66,10 +66,13 @@ function version_ge(a, b,    x, y, na, nb, i, k, u, v) {
     return 1
 }
 
+# Arrondi au plus proche plutot que troncature : "1 h" pour 1 h 59
+# induirait en erreur sur un age de cache, et la valeur affichee
+# changerait d'une unite selon la seconde d'execution.
 function human_age(s) {
-    if (s < 3600)   return int(s / 60)    " min"
-    if (s < 172800) return int(s / 3600)  " h"
-    return int(s / 86400) " j"
+    if (s < 3600)   return int(s / 60    + 0.5) " min"
+    if (s < 172800) return int(s / 3600  + 0.5) " h"
+    return int(s / 86400 + 0.5) " j"
 }
 
 # ---------------------------------------------------------------------
@@ -213,6 +216,29 @@ function packs_exposed(value, arr,    v, n) {
     return n
 }
 
+# Le cache est-il exploitable pour rendre un verdict de conformite ?
+#
+# Sans ce controle, l'absence de donnees se lit comme une absence de
+# derive : une collecte SQL en echec, une instance arretee ou un rapport
+# tronque produisaient "OK - aucune derive detectee". C'est le meme
+# mensonge que conclure a la conformite sur 9i faute de releve d'usage.
+#
+# Rend une chaine vide si tout va bien, sinon le motif du refus.
+function cache_unusable(    st) {
+    st = cstatus
+    if (st == "instance_down")
+        return "instance arretee lors de la derniere collecte, rien n'a pu etre verifie"
+    if (st == "query_failed")
+        return "l'interrogation SQL a echoue, rien n'a pu etre verifie"
+    # La sentinelle est posee en fin de script SQL : son absence signale
+    # un rapport tronque (delai depasse, tampon DBMS_OUTPUT sature).
+    if (kv["collect.sql_complete"] != "1")
+        return "rapport de collecte incomplet (sentinelle collect.sql_complete absente)"
+    if (kv["db.name"] == "" && kv["inst.version"] == "")
+        return "cache sans identite de base, contenu inexploitable"
+    return ""
+}
+
 # Database In-Memory : payant, ou inclus au titre du Base Level ?
 #
 # Depuis 19.8 et en 21c, Oracle inclut en Enterprise Edition un Column
@@ -254,9 +280,19 @@ function multitenant_included(    v) {
 
 function mode_options(    i, f, det, used, aux, opt, matched, lf, lp,
                           status, label, parts, np, stale, o, grp, msg,
-                          cnt, nstruct, partial, cmpa, n_exp, npdb, imstat) {
+                          cnt, nstruct, partial, cmpa, n_exp, npdb, imstat,
+                          unusable) {
     if (nrules == 0) {
         printf "UNKNOWN - table de correspondance vide ou illisible\n"
+        return UNKNOWN
+    }
+
+    unusable = cache_unusable()
+    if (unusable != "") {
+        printf "UNKNOWN - %s/%s: %s", db_name, sid, unusable
+        printf "|unlicensed_now=U unlicensed_past=U wrong_edition=U exposed_packs=U cache_age=%ds;;%d;0\n", \
+               age, max_cache_age
+        printf "Aucun verdict de conformite n'est rendu : l'absence de constat ne vaut pas absence de derive.\n"
         return UNKNOWN
     }
 
@@ -487,6 +523,15 @@ function mode_processors(    cores, sockets, factor, required, virt,
     virt     = (kv["host.virt"] != "" ? kv["host.virt"] : "none")
     reliable = (kv["host.cpu.reliable"] != "" ? kv["host.cpu.reliable"] + 0 : 1)
 
+    # Un inventaire materiel vide ne signifie pas "aucune licence
+    # requise" : il signifie que le comptage n'a rien donne.
+    if (cores <= 0) {
+        printf "UNKNOWN - %s/%s: inventaire materiel indisponible, nombre de coeurs inconnu", db_name, sid
+        printf "|processor_licenses=U cpu_cores=U cpu_sockets=U cache_age=%ds;;%d;0\n", age, max_cache_age
+        printf "Renseignez CORE_FACTOR et verifiez que lscpu ou WMI repond sur cet hote.\n"
+        return UNKNOWN
+    }
+
     status = OK; label = "OK"
     msg = sprintf("%d licence(s) Processor requise(s) (%d coeurs x facteur %s, %d socket(s))", \
                   required, cores, factor, sockets)
@@ -578,6 +623,19 @@ function mode_sessions(    inst_hwm, hist_hwm, peak, current, maxs,
 # =====================================================================
 function mode_freshness(    status, label, msg) {
     status = OK; label = "OK"
+
+    # Un cache date du futur trahit une horloge decalee ou un calcul
+    # d'epoque errone cote collecteur. La fraicheur devient alors
+    # inverifiable : mieux vaut le dire que d'afficher un age negatif.
+    # La tolerance couvre la derive NTP ordinaire.
+    if (age < -300) {
+        printf "WARNING - %s/%s: horodatage de collecte dans le futur de %s ", \
+               db_name, sid, human_age(-age)
+        printf "(horloge du serveur ou calcul d'epoque a verifier), fraicheur inverifiable"
+        printf "|cache_age=%ds;%d;%d;0\n", age, max_cache_age, max_cache_age * 2
+        return WARNING
+    }
+
     msg = sprintf("derniere collecte il y a %s (%s), statut=%s", \
                   human_age(age), \
                   (kv["collect.date"] != "" ? kv["collect.date"] : "inconnue"), \

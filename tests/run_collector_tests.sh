@@ -75,6 +75,10 @@ KV|db.edition|EE
 KV|inst.version|19.22.0.0.0
 OPT|Partitioning|TRUE
 FEAT|Partitioning (user)|TRUE|500|2026-08-20|2020-01-01|4
+OBJ|part_tables|17
+KV|test.backslash|valeur\\avec\\antislash
+OBJ|part_indexes|42
+OBJ|rac_instances|1
 HWM|SESSIONS|900|300
 KV|collect.sql_complete|1
 EOS
@@ -142,6 +146,34 @@ grep -q '^KV|collect.status|ok$'  "$CACHE/PROD1.dat" && ok "PROD1 : statut ok"  
 grep -q '^KV|host.cpu.cores|'     "$CACHE/PROD1.dat" && ok "PROD1 : inventaire CPU"     || bad "PROD1 : inventaire CPU"
 grep -q '^KV|host.processor_licenses|' "$CACHE/PROD1.dat" && ok "PROD1 : licences calculees" || bad "PROD1 : licences calculees"
 grep -q '^FEAT|Partitioning (user)|' "$CACHE/PROD1.dat" && ok "PROD1 : features remontees" || bad "PROD1 : features remontees"
+# Les enregistrements OBJ portent les preuves structurelles. Le filtre du
+# collecteur les a deja ecartes une fois sans qu'aucun test ne le voie :
+# les fixtures du plugin en contenaient, mais le stub sqlplus n'en
+# emettait pas. Chaque type d'enregistrement produit par le SQL doit donc
+# etre verifie de bout en bout.
+grep -q '^OBJ|part_tables|17
+KV|test.backslash|valeur\\avec\\antislash$'  "$CACHE/PROD1.dat" && ok "PROD1 : preuves structurelles conservees" || bad "PROD1 : preuves structurelles PERDUES a la collecte"
+grep -q '^OBJ|rac_instances|1$' "$CACHE/PROD1.dat" && ok "PROD1 : toutes les cles OBJ passent"      || bad "PROD1 : cles OBJ filtrees"
+grep -q '^KV|collect.sql_complete|1$' "$CACHE/PROD1.dat" && ok "PROD1 : sentinelle de fin conservee" || bad "PROD1 : sentinelle absente du cache"
+# Sous dash, "echo" interprete les antislashes : une valeur en contenant
+# etait deformee a l'ecriture, et un "\c" aurait tronque la suite du
+# cache. Le comportement differe entre dash et bash, donc entre
+# distributions -- le test tourne sous les deux.
+grep -q '^KV|test.backslash|valeur\\\\avec\\\\antislash$' "$CACHE/PROD1.dat" \
+    && ok "antislashes preserves a l'ecriture" \
+    || bad "antislashes deformes par echo (dependant du shell)"
+
+# Verification generique : tout type emis par le SQL doit survivre au
+# filtre. Protege contre l'ajout d'un type que le filtre oublierait.
+missing=""
+for rtype in KV OPT FEAT HWM OBJ; do
+    grep -q "^${rtype}|" "$CACHE/PROD1.dat" || missing="$missing $rtype"
+done
+if [[ -z $missing ]]; then
+    ok "tous les types d'enregistrement survivent au filtre"
+else
+    bad "types perdus par le filtre du collecteur :$missing"
+fi
 # Chaque cache doit porter SES donnees, pas celles du voisin.
 grep -q 'PROD1' "$CACHE/PROD2.dat" && bad "fuite de PROD1 dans le cache PROD2" \
                                   || ok "pas de fuite entre instances"

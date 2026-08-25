@@ -185,7 +185,22 @@ accuserait une base qui n'a rien à licencier.
 | CRITICAL | option non détenue **en cours d'utilisation**, ou option inutilisable dans l'édition installée |
 | WARNING | usage **seulement historique**, ou pack **accessible** sans licence déclarée, ou cache périmé |
 | OK | usage couvert, ou feature devenue gratuite dans cette version |
-| UNKNOWN | cache absent, table illisible, mode inconnu |
+| UNKNOWN | cache absent ou **inexploitable**, entrée invalide, table illisible, mode inconnu |
+
+**L'absence de constat ne vaut pas absence de dérive.** Avant de rendre
+un verdict, le mode `options` vérifie que le cache est exploitable :
+collecte réussie, rapport complet (sentinelle `collect.sql_complete`
+posée en fin de script SQL), identité présente. Une collecte en échec,
+une instance arrêtée ou un rapport tronqué donnent UNKNOWN, jamais OK.
+Le mode `processors` applique le même principe à l'inventaire matériel :
+zéro cœur détecté signifie « comptage indisponible », pas « aucune
+licence requise ».
+
+Les entrées sont validées avant usage. Le SID sert à construire le
+chemin du cache et arrive du réseau via `$ARG1$` : il est restreint aux
+identifiants Oracle légitimes. Les seuils doivent être des entiers
+positifs — un seuil non numérique valait zéro à la comparaison et
+produisait un WARNING permanent sans cause visible.
 
 Une option inutilisable dans l'édition installée est traitée à part :
 aucun bon de commande ne la régularise, contrairement à une option

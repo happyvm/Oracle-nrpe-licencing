@@ -93,7 +93,7 @@ une divergence signifierait que deux serveurs rendent des verdicts
 différents sur des données identiques — ce qui ruine la crédibilité d'un
 contrôle de licence.
 
-La parade est `tests/run_parity_tests.sh` : 37 cas comparent le code
+La parade est `tests/run_parity_tests.sh` : 42 cas comparent le code
 retour et la ligne de statut des **trois** moteurs sur des caches
 identiques. **Toute modification de la logique doit passer ce test.**
 
@@ -360,12 +360,12 @@ Enterprise Edition vers une plateforme Standard.
 |---|---|
 | Moteur awk | exécuté sous **gawk, mawk, nawk** |
 | Scripts shell | exécutés sous **bash 3.2** (compilé pour ce test), **dash**, **bash 5.2** |
-| Suites Unix | 85 + 23 tests, rejoués sous chacun des trois shells |
+| Suites Unix | 106 + 28 tests, rejoués sous chacun des trois shells |
 | Analyse statique | `shellcheck -S warning`, sans avertissement |
 | Moteur PowerShell | exécuté sous **PowerShell 7.4** |
 | Moteur VBScript | exécuté sous **cscript** (wine), les cinq modes |
-| Volume total | **361 exécutions de test**, neuf jeux de référence (9i à 21c) |
-| Parité des trois moteurs | 37 cas comparés, codes retour et ligne de statut, détection de divergence vérifiée par injection |
+| Volume total | **444 exécutions de test**, neuf jeux de référence (9i à 21c) |
+| Parité des trois moteurs | 42 cas comparés, codes retour et ligne de statut, détection de divergence vérifiée par injection |
 
 **Ce qui n'a pas pu être vérifié par exécution**, et doit l'être en
 recette avant déploiement :

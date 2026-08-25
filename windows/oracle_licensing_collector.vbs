@@ -406,8 +406,12 @@ Function QueryInstance(sSid, sHome)
                     bNotOpen = True
                 End If
             End If
+            ' OBJ porte les preuves structurelles : l'omettre reviendrait
+            ' a perdre la seule source d'usage disponible sur 9i, et le
+            ' recoupement du dictionnaire sur les autres versions.
             If Left(sLine, 3) = "KV|" Or Left(sLine, 4) = "OPT|" _
-               Or Left(sLine, 5) = "FEAT|" Or Left(sLine, 4) = "HWM|" Then
+               Or Left(sLine, 5) = "FEAT|" Or Left(sLine, 4) = "HWM|" _
+               Or Left(sLine, 4) = "OBJ|" Then
                 If Len(sResult) > 0 Then sResult = sResult & vbLf
                 sResult = sResult & sLine
                 If Left(sLine, 11) = "KV|db.name|" Then bHasName = True
