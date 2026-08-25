@@ -119,6 +119,33 @@ fi
 
 [ -n "$SID" ] || die_unknown "option -s/--sid obligatoire"
 
+# --- Validation des entrees ------------------------------------------
+#
+# Le SID arrive de la commande NRPE via $ARG1$, donc du reseau. Un
+# identifiant Oracle se limite aux alphanumeriques, au souligne et au
+# dollar : tout le reste -- une barre oblique, un point-point -- ferait
+# lire un fichier hors du repertoire de cache.
+case $SID in
+    ''|*[!A-Za-z0-9_\$]*)
+        die_unknown "SID invalide : '$SID' (attendu : lettres, chiffres, _ ou \$)" ;;
+esac
+[ "${#SID}" -le 30 ] || die_unknown "SID invalide : plus de 30 caracteres"
+
+# Un seuil mal saisi ne doit pas produire une alerte silencieusement
+# fausse. Sans ce controle, "-w abc" vaut zero a la comparaison et
+# declenche un WARNING permanent, inexplicable pour l'exploitant.
+check_number() {
+    case $2 in
+        '')          return 0 ;;
+        *[!0-9]*)    die_unknown "$1 invalide : '$2' (entier positif attendu)" ;;
+    esac
+}
+check_number "--warning"              "$WARN"
+check_number "--critical"             "$CRIT"
+check_number "--licensed-processors"  "$LICENSED_PROCESSORS"
+check_number "--max-cache-age"        "$MAX_CACHE_AGE"
+check_number "--multitenant-included" "$MULTITENANT_INCLUDED_PDBS"
+
 CACHE_FILE=$CACHE_DIR/$SID.dat
 [ -r "$CACHE_FILE" ] || die_unknown "cache absent ou illisible : $CACHE_FILE (le collecteur a-t-il tourne ?)"
 [ -r "$MAP_FILE" ]   || die_unknown "table de correspondance illisible : $MAP_FILE"

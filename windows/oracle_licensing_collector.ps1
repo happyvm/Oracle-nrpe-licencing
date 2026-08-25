@@ -260,8 +260,11 @@ function Invoke-SqlPlus([string] $InstanceSid, [string] $OracleHome) {
             }
         }
 
-        # On ne conserve que les enregistrements structures.
-        $result = @($out | Where-Object { $_ -match '^(KV|OPT|FEAT|HWM)\|' })
+        # On ne conserve que les enregistrements structures. OBJ porte
+        # les preuves structurelles : l'omettre reviendrait a perdre la
+        # seule source d'usage disponible sur 9i, et le recoupement du
+        # dictionnaire sur toutes les autres versions.
+        $result = @($out | Where-Object { $_ -match '^(KV|OPT|FEAT|HWM|OBJ)\|' })
     } finally {
         foreach ($f in @($tmpIn, $tmpOut, $tmpErr)) {
             if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }

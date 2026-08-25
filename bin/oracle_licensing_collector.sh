@@ -316,7 +316,11 @@ EOSQL
 
     # On ne conserve que les enregistrements structures : sqlplus emet
     # aussi des lignes vides et des messages divers.
-    grep -E '^(KV|OPT|FEAT|HWM)\|' "$qtmp"
+    #
+    # OBJ porte les preuves structurelles : l'omettre reviendrait a
+    # perdre la seule source d'usage disponible sur 9i, et le
+    # recoupement du dictionnaire sur toutes les autres versions.
+    grep -E '^(KV|OPT|FEAT|HWM|OBJ)\|' "$qtmp"
     rm -f "$qtmp" "$qtmp.in"
     return 0
 }

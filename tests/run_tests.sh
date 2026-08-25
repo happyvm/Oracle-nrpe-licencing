@@ -171,7 +171,8 @@ echo "== Instance arretee =="
 mkcache DOWNDB 300
 assert_rc 1 "instance arretee -> WARNING en freshness" -s DOWNDB -m freshness
 assert_out 'instance arretee' "l'etat arrete est explicite"  -s DOWNDB -m freshness
-assert_rc 0 "aucune feature collectee -> pas de fausse alerte" -s DOWNDB -m options
+assert_rc 3 "instance arretee -> UNKNOWN, jamais OK" -s DOWNDB -m options
+assert_out "rien n'a pu etre verifie" "instance arretee : le motif est explicite" -s DOWNDB -m options
 
 echo "== Oracle 9i : controle par preuves structurelles =="
 mkcache DB9I 300
@@ -304,6 +305,48 @@ if grep -q 'In-Memory' <<<"$out"; then
 else
     printf '  ok   %-58s\n' "21c : Base Level prime sur le releve d'usage"; PASS=$(( PASS + 1 ))
 fi
+
+echo "== Cache inexploitable : ne jamais conclure a la conformite =="
+# L'absence de donnees n'est pas une absence de derive. Sans ce garde-fou,
+# une collecte en echec, un rapport tronque ou une instance arretee
+# produisaient "OK - aucune derive detectee" : le vert le plus trompeur
+# possible, puisque rien n'avait ete verifie.
+now=$(date +%s)
+printf 'KV|collect.epoch|%s\nKV|db.name|FAILED\nKV|collect.status|query_failed\n' \
+    "$(( now - 300 ))" > "$WORK/FAILED.dat"
+assert_rc 3 "collecte SQL en echec -> UNKNOWN"      -s FAILED -m options
+assert_out 'interrogation SQL a echoue' "echec SQL : le motif est explicite" -s FAILED -m options
+
+# Rapport tronque : identite presente, sentinelle de fin absente.
+printf 'KV|collect.epoch|%s\nKV|db.name|TRUNC\nKV|inst.version|19.22.0.0.0\nKV|db.edition|EE\nKV|collect.status|ok\n' \
+    "$(( now - 300 ))" > "$WORK/TRUNC.dat"
+assert_rc 3 "rapport tronque -> UNKNOWN"            -s TRUNC -m options
+assert_out 'sql_complete' "rapport tronque : la sentinelle est nommee" -s TRUNC -m options
+assert_rc 3 "inventaire materiel vide -> UNKNOWN"   -s TRUNC -m processors
+assert_out 'coeurs inconnu' "materiel absent : le motif est explicite" -s TRUNC -m processors
+
+# Un cache sain doit continuer de rendre un verdict.
+mkcache ORCL 300
+assert_rc 0 "cache sain : le garde-fou ne bloque pas" -s ORCL -m options \
+    --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
+
+echo "== Validation des entrees =="
+# Un seuil mal saisi valait zero a la comparaison : tout pic le
+# depassait, et l'exploitant heritait d'un WARNING permanent sans cause
+# visible. Le SID, lui, arrive du reseau via $ARG1$.
+mkcache ORCL 300
+assert_rc 3 "seuil non numerique -> UNKNOWN"     -s ORCL -m sessions -w abc -c 99999
+assert_rc 3 "seuil negatif -> UNKNOWN"           -s ORCL -m sessions -w -5 -c 99999
+assert_rc 0 "seuil valide accepte"               -s ORCL -m sessions -w 2000 -c 3000
+assert_rc 3 "licensed-processors non numerique"  -s ORCL -m processors --licensed-processors x1
+assert_rc 3 "multitenant-included non numerique" -s ORCL -m options --multitenant-included abc
+# Le SID sert a construire le chemin du cache : une traversee de
+# repertoire ferait lire un fichier hors de CACHE_DIR.
+assert_rc 3 "SID avec traversee de chemin rejete" -s '../etc/passwd' -m options
+assert_rc 3 "SID avec barre oblique rejete"       -s 'a/b' -m options
+assert_out 'SID invalide' "le motif du rejet est explicite" -s 'a/b' -m options
+assert_rc 0 "SID legitime accepte"                -s ORCL -m options \
+    --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
 
 echo "== Robustesse =="
 assert_rc 3 "SID inconnu -> UNKNOWN"   -s NOPE -m options

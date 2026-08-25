@@ -104,6 +104,30 @@ if ($cfg.ContainsKey('MAX_CACHE_AGE') -and $MaxCacheAge -eq 93600) {
 
 if (-not $Sid) { Exit-Unknown 'parametre -Sid obligatoire' }
 
+# --- Validation des entrees ------------------------------------------
+#
+# Le SID arrive de la commande NRPE via $ARG1$, donc du reseau. Un
+# identifiant Oracle se limite aux alphanumeriques, au souligne et au
+# dollar : tout le reste ferait lire un fichier hors du repertoire de
+# cache.
+if ($Sid -notmatch '^[A-Za-z0-9_$]{1,30}$') {
+    Exit-Unknown ("SID invalide : '{0}' (attendu : lettres, chiffres, _ ou `$, 30 max)" -f $Sid)
+}
+
+# Un seuil mal saisi ne doit pas produire une alerte silencieusement
+# fausse : sans ce controle, un seuil non numerique vaut zero a la
+# comparaison et declenche un WARNING permanent.
+function Assert-Number([string] $Name, [string] $Value) {
+    if ($Value -eq '') { return }
+    if ($Value -notmatch '^[0-9]+$') {
+        Exit-Unknown ("{0} invalide : '{1}' (entier positif attendu)" -f $Name, $Value)
+    }
+}
+Assert-Number '-WarnThreshold'       $WarnThreshold
+Assert-Number '-CritThreshold'       $CritThreshold
+Assert-Number '-LicensedProcessors'  $LicensedProcessors
+Assert-Number '-MultitenantIncluded' $MultitenantIncluded
+
 $CacheFile = Join-Path $CacheDir ($Sid + '.dat')
 if (-not (Test-Path $CacheFile)) {
     Exit-Unknown ("cache absent ou illisible : {0} (le collecteur a-t-il tourne ?)" -f $CacheFile)
@@ -270,6 +294,31 @@ function Join-SortedKeys($Table) {
 # =====================================================================
 # Mode "options"
 # =====================================================================
+# Le cache est-il exploitable pour rendre un verdict de conformite ?
+#
+# Sans ce controle, l'absence de donnees se lit comme une absence de
+# derive : une collecte SQL en echec, une instance arretee ou un rapport
+# tronque produisaient "OK - aucune derive detectee".
+#
+# Rend une chaine vide si tout va bien, sinon le motif du refus.
+function Get-CacheUnusableReason {
+    if ($CStatus -eq 'instance_down') {
+        return "instance arretee lors de la derniere collecte, rien n'a pu etre verifie"
+    }
+    if ($CStatus -eq 'query_failed') {
+        return "l'interrogation SQL a echoue, rien n'a pu etre verifie"
+    }
+    # La sentinelle est posee en fin de script SQL : son absence signale
+    # un rapport tronque (delai depasse, tampon DBMS_OUTPUT sature).
+    if ((Get-KV 'collect.sql_complete' '') -ne '1') {
+        return 'rapport de collecte incomplet (sentinelle collect.sql_complete absente)'
+    }
+    if ((Get-KV 'db.name' '') -eq '' -and (Get-KV 'inst.version' '') -eq '') {
+        return 'cache sans identite de base, contenu inexploitable'
+    }
+    return ''
+}
+
 # Database In-Memory : payant, ou inclus au titre du Base Level ?
 #
 # Depuis 19.8 et en 21c, Oracle inclut en Enterprise Edition un Column
@@ -331,6 +380,14 @@ function Get-ExposedPacks([string] $Value) {
 }
 
 function Invoke-ModeOptions {
+    $unusable = Get-CacheUnusableReason
+    if ($unusable -ne '') {
+        Write-Output ("UNKNOWN - {0}/{1}: {2}|unlicensed_now=U unlicensed_past=U wrong_edition=U exposed_packs=U cache_age={3}s;;{4};0" -f `
+            $DbName, $Sid, $unusable, $Age, $MaxCacheAge)
+        Write-Output "Aucun verdict de conformite n'est rendu : l'absence de constat ne vaut pas absence de derive."
+        $script:ExitCode = $UNKNOWN; return
+    }
+
     $violNow = @{}; $violPast = @{}; $covered = @{}; $freed = @{}; $wrongEdition = @{}
     $detail  = @{}
 
@@ -550,6 +607,15 @@ function Invoke-ModeProcessors {
     $required = Get-KVInt 'host.processor_licenses'
     $virt     = Get-KV 'host.virt' 'none'
     $reliable = Get-KV 'host.cpu.reliable' '1'
+
+    # Un inventaire materiel vide ne signifie pas "aucune licence
+    # requise" : il signifie que le comptage n'a rien donne.
+    if ($cores -le 0) {
+        Write-Output ("UNKNOWN - {0}/{1}: inventaire materiel indisponible, nombre de coeurs inconnu|processor_licenses=U cpu_cores=U cpu_sockets=U cache_age={2}s;;{3};0" -f `
+            $DbName, $Sid, $Age, $MaxCacheAge)
+        Write-Output 'Renseignez CORE_FACTOR et verifiez que lscpu ou WMI repond sur cet hote.'
+        $script:ExitCode = $UNKNOWN; return
+    }
 
     $status = $OK; $label = 'OK'
     $msg = "{0} licence(s) Processor requise(s) ({1} coeurs x facteur {2}, {3} socket(s))" -f `

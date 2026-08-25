@@ -438,6 +438,36 @@ If oCfg.Exists("CACHE_DIR_WIN") And Not oArgs.Exists("CacheDir") Then gCacheDir 
 
 If Len(gSid) = 0 Then Fail "parametre /Sid: obligatoire"
 
+' --- Validation des entrees ------------------------------------------
+'
+' Le SID arrive de la commande NRPE via $ARG1$, donc du reseau. Un
+' identifiant Oracle se limite aux alphanumeriques, au souligne et au
+' dollar : tout le reste ferait lire un fichier hors du repertoire de
+' cache.
+Dim oSidRe
+Set oSidRe = CreateObject("VBScript.RegExp")
+oSidRe.Pattern = "^[A-Za-z0-9_$]{1,30}$"
+If Not oSidRe.Test(gSid) Then
+    Fail "SID invalide : '" & gSid & "' (attendu : lettres, chiffres, _ ou $, 30 max)"
+End If
+
+' Un seuil mal saisi ne doit pas produire une alerte silencieusement
+' fausse : sans ce controle, un seuil non numerique vaut zero a la
+' comparaison et declenche un WARNING permanent.
+Sub AssertNumber(sName, sValue)
+    Dim oRe
+    If Len(sValue) = 0 Then Exit Sub
+    Set oRe = CreateObject("VBScript.RegExp")
+    oRe.Pattern = "^[0-9]+$"
+    If Not oRe.Test(sValue) Then
+        Fail sName & " invalide : '" & sValue & "' (entier positif attendu)"
+    End If
+End Sub
+AssertNumber "/Warning",             gWarn
+AssertNumber "/Critical",            gCrit
+AssertNumber "/LicensedProcessors",  gLicProcessors
+AssertNumber "/MultitenantIncluded", gMtIncluded
+
 Dim sCacheFile
 sCacheFile = gCacheDir
 If Right(sCacheFile, 1) <> "\" And Right(sCacheFile, 1) <> "/" Then sCacheFile = sCacheFile & "\"
@@ -492,6 +522,34 @@ Function IsLicensed(sOption)
             Exit Function
         End If
     Next
+End Function
+
+' Le cache est-il exploitable pour rendre un verdict de conformite ?
+'
+' Sans ce controle, l'absence de donnees se lit comme une absence de
+' derive : une collecte SQL en echec, une instance arretee ou un rapport
+' tronque produisaient "OK - aucune derive detectee".
+'
+' Rend une chaine vide si tout va bien, sinon le motif du refus.
+Function CacheUnusable()
+    CacheUnusable = ""
+    If gCStatus = "instance_down" Then
+        CacheUnusable = "instance arretee lors de la derniere collecte, rien n'a pu etre verifie"
+        Exit Function
+    End If
+    If gCStatus = "query_failed" Then
+        CacheUnusable = "l'interrogation SQL a echoue, rien n'a pu etre verifie"
+        Exit Function
+    End If
+    ' La sentinelle est posee en fin de script SQL : son absence signale
+    ' un rapport tronque (delai depasse, tampon DBMS_OUTPUT sature).
+    If GetKV("collect.sql_complete", "") <> "1" Then
+        CacheUnusable = "rapport de collecte incomplet (sentinelle collect.sql_complete absente)"
+        Exit Function
+    End If
+    If GetKV("db.name", "") = "" And GetKV("inst.version", "") = "" Then
+        CacheUnusable = "cache sans identite de base, contenu inexploitable"
+    End If
 End Function
 
 ' Database In-Memory : payant, ou inclus au titre du Base Level ?
@@ -573,10 +631,21 @@ End Function
 ' =====================================================================
 Function ModeOptions()
     Dim oViolNow, oViolPast, oCovered, oFreed, oWrongEd, oDetail
+    Dim sUnusable
     Dim aFeat, i, r, sFeature, nDet, sUsed, nAux, nMatched
     Dim oRe, sOpt, sNote, sFirst, sLast, sEntry
     Dim nNow, nPast, nCov, nEdt, nExp, nStatus, sLabel, sStale, sMsg, sPartial
     Dim aKeys, k, e, nCnt, oExposed, sCmpa, nPdb, nMtIncl, sImStat
+
+    sUnusable = CacheUnusable()
+    If Len(sUnusable) > 0 Then
+        WScript.Echo "UNKNOWN - " & gDbName & "/" & gSid & ": " & sUnusable & _
+            "|unlicensed_now=U unlicensed_past=U wrong_edition=U exposed_packs=U cache_age=" & _
+            gAge & "s;;" & gMaxCacheAge & ";0"
+        WScript.Echo "Aucun verdict de conformite n'est rendu : l'absence de constat ne vaut pas absence de derive."
+        ModeOptions = UNKNOWN_
+        Exit Function
+    End If
 
     Set oViolNow  = CreateObject("Scripting.Dictionary")
     Set oViolPast = CreateObject("Scripting.Dictionary")
@@ -876,6 +945,17 @@ Function ModeProcessors()
     nRequired = GetKVLong("host.processor_licenses")
     sVirt     = GetKV("host.virt", "none")
     sReliable = GetKV("host.cpu.reliable", "1")
+
+    ' Un inventaire materiel vide ne signifie pas "aucune licence
+    ' requise" : il signifie que le comptage n'a rien donne.
+    If nCores <= 0 Then
+        WScript.Echo "UNKNOWN - " & gDbName & "/" & gSid & _
+            ": inventaire materiel indisponible, nombre de coeurs inconnu" & _
+            "|processor_licenses=U cpu_cores=U cpu_sockets=U cache_age=" & gAge & "s;;" & gMaxCacheAge & ";0"
+        WScript.Echo "Renseignez CORE_FACTOR et verifiez que lscpu ou WMI repond sur cet hote."
+        ModeProcessors = UNKNOWN_
+        Exit Function
+    End If
 
     nStatus = OK_ : sLabel = "OK"
     sMsg = nRequired & " licence(s) Processor requise(s) (" & nCores & _
