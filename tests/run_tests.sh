@@ -330,6 +330,18 @@ mkcache ORCL 300
 assert_rc 0 "cache sain : le garde-fou ne bloque pas" -s ORCL -m options \
     --licensed-options "Partitioning,Diagnostics Pack,Advanced Compression,Tuning Pack"
 
+echo "== Inventaire sur donnees incompletes =="
+# Le mode inventory sert au recensement : restituer "0 option liee" sur
+# une collecte en echec fausserait le releve. Il reste sans alerte,
+# mais doit annoncer que la fiche est incomplete.
+now=$(date +%s)
+printf 'KV|collect.epoch|%s\nKV|db.name|BROKEN\nKV|collect.status|query_failed\n' \
+    "$(( now - 300 ))" > "$WORK/BROKEN.dat"
+assert_rc 0 "inventory reste sans alerte"           -s BROKEN -m inventory
+assert_out 'DONNEES INCOMPLETES' "inventory annonce la fiche incomplete" -s BROKEN -m inventory
+mkcache ORCL 300
+assert_out '^OK - ORCL/ORCL' "inventory sain sans mention parasite" -s ORCL -m inventory
+
 echo "== Horodatage aberrant =="
 # Un cache date du futur trahit une horloge decalee ou un calcul
 # d'epoque errone cote collecteur. Sans ce controle, freshness affichait

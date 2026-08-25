@@ -443,6 +443,13 @@ End Function
 ' Ecriture dans un fichier temporaire puis remplacement : le plugin peut
 ' lire a tout instant et ne doit jamais tomber sur un cache a moitie
 ' ecrit.
+'
+' FileSystemObject ne sait pas remplacer un fichier en une seule
+' operation : DeleteFile puis MoveFile ouvre une fenetre pendant
+' laquelle le cache n'existe pas, et un controle NRPE tombant dedans
+' rendrait "cache absent". La commande "move /Y" s'appuie sur
+' MoveFileEx, dont le remplacement est atomique sur un meme volume
+' NTFS -- comme le rename() d'Unix et le Move-Item de PowerShell.
 ' ---------------------------------------------------------------------
 Function WriteCache(sSid, sContent)
     Dim sTarget, sTmp, oFile
@@ -461,11 +468,19 @@ Function WriteCache(sSid, sContent)
     oFile.Write sContent & vbCrLf
     oFile.Close
 
-    If oFSO.FileExists(sTarget) Then oFSO.DeleteFile sTarget, True
-    oFSO.MoveFile sTmp, sTarget
-    If Err.Number <> 0 Then
-        Warn sSid & " : remplacement du cache impossible -- " & Err.Description
-        Err.Clear : On Error GoTo 0 : Exit Function
+    Dim nMove
+    nMove = oShell.Run("cmd /c move /Y """ & sTmp & """ """ & sTarget & """", 0, True)
+    If Err.Number <> 0 Or nMove <> 0 Then
+        ' Repli si le shell est indisponible : la fenetre de
+        ' non-existence redevient possible, mais mieux vaut un cache
+        ' remplace non atomiquement que pas de cache du tout.
+        Err.Clear
+        If oFSO.FileExists(sTarget) Then oFSO.DeleteFile sTarget, True
+        oFSO.MoveFile sTmp, sTarget
+        If Err.Number <> 0 Then
+            Warn sSid & " : remplacement du cache impossible -- " & Err.Description
+            Err.Clear : On Error GoTo 0 : Exit Function
+        End If
     End If
     On Error GoTo 0
     Trace sSid & " : cache ecrit dans " & sTarget

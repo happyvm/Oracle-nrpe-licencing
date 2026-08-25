@@ -1094,14 +1094,24 @@ End Function
 ' Mode "inventory"
 ' =====================================================================
 Function ModeInventory()
-    Dim nOpt, aKeys, i
+    Dim nOpt, aKeys, i, sUnusable, sPrefix
     nOpt = 0
     aKeys = gOPT.Keys
     For i = 0 To UBound(aKeys)
         If UCase(gOPT(aKeys(i))) = "TRUE" Then nOpt = nOpt + 1
     Next
 
-    WScript.Echo "OK - " & gDbName & "/" & gSid & ": " & gEdition & " " & gDbVersion & ", " & _
+    ' Restituer "0 option liee" sur une collecte en echec fausserait un
+    ' recensement. Le mode reste sans alerte -- c'est sa raison d'etre --
+    ' mais il doit dire que la fiche est incomplete.
+    sUnusable = CacheUnusable()
+    If Len(sUnusable) > 0 Then
+        sPrefix = "OK - [DONNEES INCOMPLETES: " & sUnusable & "] "
+    Else
+        sPrefix = "OK - "
+    End If
+
+    WScript.Echo sPrefix & gDbName & "/" & gSid & ": " & gEdition & " " & gDbVersion & ", " & _
         GetKV("db.role", "-") & ", " & GetKVLong("host.cpu.cores") & " coeurs/" & _
         GetKVLong("host.cpu.sockets") & " sockets, " & nOpt & " option(s) liee(s), " & _
         gNFeat & " feature(s) tracee(s)" & _

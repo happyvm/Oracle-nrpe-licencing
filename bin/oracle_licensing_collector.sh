@@ -95,8 +95,14 @@ fi
 # garde qui l'interrompt puis la tue. Sans cela, un sqlplus bloque sur
 # une base gelee immobiliserait la collecte de tout le serveur.
 # ---------------------------------------------------------------------
+#
+# ORACLE_LICENSING_NO_TIMEOUT=1 force le repli, meme quand la commande
+# existe : c'est le seul moyen d'exercer le chemin RHEL 5 depuis une
+# machine moderne, et cela depanne un "timeout" defaillant.
 HAVE_TIMEOUT=0
-command -v timeout >/dev/null 2>&1 && HAVE_TIMEOUT=1
+if [ "${ORACLE_LICENSING_NO_TIMEOUT:-0}" != 1 ]; then
+    command -v timeout >/dev/null 2>&1 && HAVE_TIMEOUT=1
+fi
 
 run_limited() {
     # run_limited <secondes> <fichier_sortie> <commande...>

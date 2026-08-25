@@ -751,10 +751,17 @@ function Invoke-ModeInventory {
     $nopt = 0
     foreach ($k in $OPTV.Keys) { if ($OPTV[$k].ToUpper() -eq 'TRUE') { $nopt++ } }
 
-    Write-Output ("OK - {0}/{1}: {2} {3}, {4}, {5} coeurs/{6} sockets, {7} option(s) liee(s), {8} feature(s) tracee(s)|linked_options={7};;;0 tracked_features={8};;;0 processor_licenses={9};;;0 cache_age={10}s;;;0" -f `
+    # Restituer "0 option liee" sur une collecte en echec fausserait un
+    # recensement. Le mode reste sans alerte -- c'est sa raison d'etre --
+    # mais il doit dire que la fiche est incomplete.
+    $unusable = Get-CacheUnusableReason
+    $prefix = 'OK - '
+    if ($unusable -ne '') { $prefix = "OK - [DONNEES INCOMPLETES: $unusable] " }
+
+    Write-Output ($prefix + ("{0}/{1}: {2} {3}, {4}, {5} coeurs/{6} sockets, {7} option(s) liee(s), {8} feature(s) tracee(s)|linked_options={7};;;0 tracked_features={8};;;0 processor_licenses={9};;;0 cache_age={10}s;;;0" -f `
         $DbName, $Sid, $Edition, $DbVersion, (Get-KV 'db.role' '-'), `
         (Get-KVInt 'host.cpu.cores'), (Get-KVInt 'host.cpu.sockets'), `
-        $nopt, $NFeat, (Get-KVInt 'host.processor_licenses'), $Age)
+        $nopt, $NFeat, (Get-KVInt 'host.processor_licenses'), $Age))
 
     Write-Output ("Hote          : {0} ({1}, {2})" -f (Get-KV 'host.name' '-'), (Get-KV 'host.cpu.model' '-'), (Get-KV 'host.virt' 'none'))
     Write-Output ("Base          : {0} / DBID {1} / role {2} / mode {3}" -f $DbName, (Get-KV 'db.dbid' '-'), (Get-KV 'db.role' '-'), (Get-KV 'db.open_mode' '-'))

@@ -667,12 +667,18 @@ function mode_freshness(    status, label, msg) {
 # Mode "inventory" : restitution sans alerte, pour la documentation et
 # les campagnes de recensement avant negociation contractuelle.
 # =====================================================================
-function mode_inventory(    k, nopt, n, i, tmp, v, j) {
+function mode_inventory(    k, nopt, n, i, tmp, v, j, unusable) {
     nopt = 0
     for (k in optv) if (toupper(optv[k]) == "TRUE") nopt++
 
-    printf "OK - %s/%s: %s %s, %s, %d coeurs/%d sockets, %d option(s) liee(s), %d feature(s) tracee(s)", \
-           db_name, sid, edition, version, \
+    # Restituer "0 option liee" sur une collecte en echec fausserait un
+    # recensement. Le mode reste sans alerte -- c'est sa raison d'etre --
+    # mais il doit dire que la fiche est incomplete.
+    unusable = cache_unusable()
+    if (unusable != "") printf "OK - [DONNEES INCOMPLETES: %s] ", unusable
+
+    printf "%s/%s: %s %s, %s, %d coeurs/%d sockets, %d option(s) liee(s), %d feature(s) tracee(s)", \
+           (unusable == "" ? "OK - " db_name : db_name), sid, edition, version, \
            (kv["db.role"] != "" ? kv["db.role"] : "-"), \
            kv["host.cpu.cores"] + 0, kv["host.cpu.sockets"] + 0, nopt, nfeat + 0
     printf "|linked_options=%d;;;0 tracked_features=%d;;;0 processor_licenses=%d;;;0 cache_age=%ds;;;0\n", \
